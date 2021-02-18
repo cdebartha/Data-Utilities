@@ -12,9 +12,9 @@ def progressbar(progress, barLength=15):
 
 # Input
 
-start = 0
-end = 11
-filename = 'bp2p1_flowRate.dat'
+start = 1
+end = 15
+filename = 'ssa4_bp1p6_flowRate.dat'
 
 # Code main
 print('Setting up environment for mass flow rate calculations: ')
@@ -28,7 +28,9 @@ bnd2nn = 3973
 bnd2ne = 7784
 bnd3nn = 195
 bnd3ne = 344
-tot = nn + bnd1nn + bnd1ne + bnd2nn + bnd2ne + bnd3nn + bnd3ne
+bnd4nn = 3086
+bnd4ne = 5990
+tot = nn + bnd1nn + bnd1ne + bnd2nn + bnd2ne + bnd3nn + bnd3ne + bnd4nn + bnd4ne
 curr = 0
 target = tot / bar 
 ndof = 5
@@ -37,10 +39,11 @@ gamma = 1.4
 cv = 1/(gamma*(gamma-1))
 
 dataFiles = ['data.' + str(i).zfill(2) for i in range(start, end+1)]
-xyzFile = 'xyz.bin'
+xyzFile = 'mxyz'
 bnd1File = 'inletUpper.bin'
 bnd2File = 'merger.bin'
 bnd3File = 'outlet.bin'
+bnd4File = 'inletLower.bin'
 
 x = np.empty(nn, dtype='float64')
 y = np.empty(nn, dtype='float64')
@@ -121,7 +124,30 @@ for i in range(bnd3ne):
         progress += 1
         target = (progress + 1) * tot / bar
         progressbar(progress, barLength=bar)
+curr += bnd3ne
 bnd3file.close()
+
+bnd4nodes = np.empty(bnd4nn, dtype='int64')
+bnd4ien = np.empty((bnd4ne,3), dtype='int64')
+bnd4file = open(bnd4File,'rb')
+for i in range(bnd4nn):
+    inode = bnd4file.read(8)
+    bnd4nodes[i] = struct.unpack('q',inode)[0]
+    if i >= target - curr:
+        progress += 1
+        target = (progress + 1) * tot / bar 
+        progressbar(progress, barLength=bar)
+curr += bnd4nn
+for i in range(bnd4ne):
+    for j in range(3):
+        iendata = bnd4file.read(8)
+        bnd4ien[i][j] = struct.unpack('q',iendata)[0]
+    if i >= target - curr:
+        progress += 1
+        target = (progress + 1) * tot / bar
+        progressbar(progress, barLength=bar)
+curr += bnd4ne
+bnd4file.close()
 
 d = np.empty((nn,ndof), dtype='float64')
 d_trans = np.empty((nn,nvar), dtype='float64')
@@ -131,10 +157,10 @@ print('\n')
 
 for dataFile in dataFiles:
     print('Calculating mass flow rates for ' + dataFile + ': ')
-    tot = nn + bnd1ne + bnd2ne + bnd3ne
+    tot = nn + bnd1ne + bnd2ne + bnd3ne + bnd4ne
     curr = 0
     progress = 0
-    target = tot / 15
+    target = tot / bar
     progressbar(progress, barLength=bar)
     datafile = open(dataFile,'rb')
     for i in range(nn):
@@ -229,13 +255,40 @@ for dataFile in dataFiles:
             ug = sh.dot(ue)
             rhog = sh.dot(rhoe)
             flowRate3 += c*ug*rhog*j*wg[iquad]
-
+    curr += bnd3ne
+    
+    ze = np.empty(3, dtype='float64')
+    ye = np.empty(3, dtype='float64')
+    ue = np.empty(3, dtype='float64')
+    rhoe = np.empty(3, dtype='float64')
+    sh = np.empty(3, dtype='float64')
+    flowRate4 = 0.0
+    c = 0.5
+    for ie, elem in enumerate(bnd4ien):
+        ze = z[elem].copy()
+        ye = y[elem].copy()
+        ue = d_trans[elem,1].copy()
+        rhoe = d_trans[elem,0].copy()
+        j = np.abs((ze[0]-ze[2])*(ye[1]-ye[2]) - (ze[1]-ze[2])*(ye[0]-ye[2]))
+        if ie >= target - curr:
+            progress += 1
+            target = (progress + 1) * tot / bar
+            progressbar(progress, barLength=bar)
+        for iquad in range(3):
+            sh[0] = rg[iquad]
+            sh[1] = sg[iquad]
+            sh[2] = 1 - rg[iquad] - sg[iquad]
+            ug = sh.dot(ue)
+            rhog = sh.dot(rhoe)
+            flowRate4 += c*ug*rhog*j*wg[iquad]
+    curr += bnd4ne
+    
     #print('mdot at x = 0.0572: ' + str(flowRate1*2))
     #print('mdot at x = 1.0: ' + str(flowRate2))
     #print('mdot at x = 2.8: ' + str(flowRate3))
 
     writefile = open(filename, 'a')
-    writefile.write(str(flowRate1*2) + '\t' + str(flowRate2) + '\t' + str(flowRate3) + '\n')
+    writefile.write(str(flowRate1) + '\t' + str(flowRate4) + '\t' + str(flowRate2) + '\t' + str(flowRate3) + '\n')
     writefile.close()
     
     progressbar(progress+1, barLength=bar)
