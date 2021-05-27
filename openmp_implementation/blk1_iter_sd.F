@@ -1,16 +1,17 @@
         subroutine blk_iter_sd(ien,x1,d1,do,bp1,
      $          angle,rng,wg1,d1_t,do_t,selm,prs_down)
 
+        USE OMP_LIB
         implicit none
         include 'global.h'
-	include 'turbpara.h'
+        include 'turbpara.h'
 
 !.......External variables.
         integer ien(nen,nec)
         integer rng(neface,nec)
         real*8  selm(nee,nee,nec)
-	integer mgau2 
-	parameter(mgau2=21)
+        integer mgau2 
+        parameter(mgau2=21)
 !        real*8  b(ndf,nnl)
         real*8  bp1(ndf,nnl)
         real*8  wg1(ndf,nnl)
@@ -39,11 +40,13 @@
         real*8  k21(ndf,ndf), k22(ndf,ndf), k23(ndf,ndf)
         real*8  k31(ndf,ndf), k32(ndf,ndf), k33(ndf,ndf)
         real*8  sh(0:3,nen),xs(nsd,nsd),det
-	real*8  gaus(nsd,mgau2)
-	real*8  weis(mgau2)
+        real*8  gaus(nsd,mgau2)
+        real*8  weis(mgau2)
         real*8  s0,s1,s2,s3,b0,b1,b2,b3
         real*8  s(nee,nee),p(nee)
         real*8  rotate(nee,nee),p_rot(nee)
+        real*8  sq3c(0:3,nen,nquad3)
+        real*8  facemapc(neface,nnface)
 
 !.......Counter variables.
         integer idof,jdof,iee,jee
@@ -57,10 +60,11 @@
 !.......Temporary variables
         real*8  tmp,tmp1,tmp2,tmp3,tmp4,tmp5,tmp6,tmp7,tmp8
 !	murali
-	real*8  temp1,temp2,temp3,temp4,temp5,temp6,temp7,temp8,dis1,dis2,dis3
-	real*8 he_max,he_min,he_ugn,he_rgn
-	real*8 umag0,umagx,umagy,umagz,grad_umag
-	real*8 rx,ry,rz,sx,sy,sz
+        real*8 temp1,temp2,temp3,temp4,temp5,temp6,temp7,temp8
+        real*8 dis1,dis2,dis3
+        real*8 he_max,he_min,he_ugn,he_rgn
+        real*8 umag0,umagx,umagy,umagz,grad_umag
+        real*8 rx,ry,rz,sx,sy,sz
 !	murali
         real*8  cf11,cf21,cf31,cf41,cf12,cf22,cf32,cf42
         real*8  cf13,cf23,cf33,cf43,cf14,cf24,cf34,cf44
@@ -86,10 +90,10 @@
         real*8  cos_a, sin_a, angle_a
 
 !.......Matrices and Variables Related to Turbulence
-	real*8 d1_t(ndf_t,nnl),do_t(ndf_t,nnl)
-	real*8 dl1_t(ndf_t,nen),dlo_t(ndf_t,nen)
-	real*8 nut_n,nut_np1,nut
-	real*8 ki,fv1,kin_eddy,dyn_eddy
+        real*8 d1_t(ndf_t,nnl),do_t(ndf_t,nnl)
+        real*8 dl1_t(ndf_t,nen),dlo_t(ndf_t,nen)
+        real*8 nut_n,nut_np1,nut
+        real*8 ki,fv1,kin_eddy,dyn_eddy
 !.......Turbulence Variables END
 
         integer countf(22)
@@ -110,6 +114,43 @@
         cv = gas_const/(gamma-1.0)
         jcode = 0
 
+        call fclear(bp1,ndf*nnl)
+        call fclear(wg1,ndf*nnl)
+!        write(6,*) "Inside blk1_iter_sd before element loop"
+
+!        call lgau3t(iquad,nquad3,gaus,weis)   !Quadrature Points
+
+!.......ELEMENT LOOP BEGINS.............................!
+!...make all the internal variables private
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(ident, xl1, dlo, dl1, a1, a2,
+!$OMP& a3, a1a1, a1a2, sq3c, facemapc,
+!$OMP& a1a3, a2a1, a2a2, a2a3, a3a1, a3a2, a3a3, a1m, a2m, a3m, a0i,
+!$OMP& res, dv, k11, k12, k13, k21, k22, k23, k31, k32, k33, sh, xs,
+!$OMP& det, gaus, weis, s0, s1, s2, s3, b0, b1, b2, b3, s, p, rotate,
+!$OMP& p_rot, idof, jdof, iee, jee, i, j, na, nb, nai, nbj, irng, ie,
+!$OMP& inen, inode, jnode, isd, ig, iface, ia, ia1, ia2, ia3, ia4, ia5,
+!$OMP& na1, na2, na3, na4, na5, ib, sumasn, sumasn1, sumasn2, sumasn3,
+!$OMP& ip, iq, tmp, tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7, tmp8,
+!$OMP& temp1, temp2, temp3, temp4, temp5, temp6, temp7, temp8, dis1,
+!$OMP& dis2, dis3, he_max, he_min, he_ugn, he_rgn, umag0, umagx, umagy,
+!$OMP& umagz, grad_umag, rx, ry, rz, sx, sy, sz, cf11, cf21, cf31, cf41,
+!$OMP& cf12, cf22, cf32, cf42, cf13, cf23, cf33, cf43, cf14, cf24, cf34,
+!$OMP& cf44, xr11, xr21, xr31, xr41, xr12, xr22, xr32, xr42, xr13, xr23, 
+!$OMP& xr33, xr43, xr14, xr24, xr34, xr44, g, gm1, gm3, gm1b2, tmgb2, 
+!$OMP& gm1u, gm1v, gm1w, gm1uv, gm1uw, gm1vw, uu, vv, ww, uv, uw, vw,
+!$OMP& u, v, w, e, ge, roi, roii, entropy, temp, temp_down,
+!$OMP& temp_surf, v1, v2, v3, v4, v5, xk1, xd1, xd2, xd3, e1, e2, e3,
+!$OMP& rnum, rden, effs, eff0, effa, effsa, effdt, dif_mol,
+!$OMP& gm, ro, et, xi, t, ts, xmu, xla, r, xkcv, 
+!$OMP& xvv, umag, pres, c_sound, umagc, h1, h2, hel, 
+!$OMP& tau, tau1, tau2, tau_delta, delt, cos_a, sin_a, angle_a,
+!$OMP& dl1_t, dlo_t, nut_n, nut_np1, nut, ki, fv1, dyn_eddy, kin_eddy,
+!$OMP& flag, countf, icode, jcode,
+!$OMP& ut, uc, ux, uy, uz, uxn, uyn, uzn, uxnp1, uynp1, uznp1,
+!$OMP& un, unp1, up, uch)
+!        write(6,*) 'I am in node ', my_pe, ', thread ',
+!     +       OMP_GET_THREAD_NUM()
+
 !.......Define an identity matrix
         do idof =1,ndf
             do jdof =1,ndf
@@ -118,17 +159,31 @@
             ident(idof,idof) = 1.0d0
         enddo
 
-        call fclear(bp1,ndf*nnl)
-        call fclear(wg1,ndf*nnl)
+!.......Localize sq3 for each thread
+        do i = 0,3
+            do inen = 1,nen
+                do ig = 1,nquad3
+                    sq3c(i,inen,ig) = sq3(i,inen,ig)
+                enddo
+            enddo
+        enddo
 
-!        call lgau3t(iquad,nquad3,gaus,weis)   !Quadrature Points
+!.......Localize facemap for each thread
+        do iface = 1,neface
+            do jnode = 1,nnface
+                facemapc(iface,jnode) = facemap(iface,jnode,elem_type)
+            enddo
+        enddo
 
-!.......ELEMENT LOOP BEGINS.............................!
+!$OMP DO SCHEDULE(DYNAMIC,16)
         do ie=1,nec
-
+!            if (ie .eq. 1) then
+!                write(6,*) "Inside element loop"
+!            endif
 !.......LOCALIZE DATA...................................!
             do inen=1,nen
                 inode=ien(inen,ie)
+!                write(6,*) "Inside element loop"
 !.......COORDINATES
                 do isd=1,nsd
                     xl1(isd,inen)=x1(isd,inode)
@@ -138,15 +193,16 @@
                     dl1(idof,inen)=d1(idof,inode)
                     dlo(idof,inen)=do(idof,inode)
                 enddo
-	       if(turbulent)then
-	      do idof =1,ndf_t
-	        dlo_t(idof,inen)=do_t(idof,inode)
-	        dl1_t(idof,inen)=d1_t(idof,inode)
-	      end do  
-	    endif
+              if(turbulent)then
+                do idof =1,ndf_t
+                  dlo_t(idof,inen)=do_t(idof,inode)
+                  dl1_t(idof,inen)=d1_t(idof,inode)
+               end do  
+              endif
 
             enddo
-
+!            write(6,*) 'Inside element loop for ie = ', ie, 
+!     +          'from thread ', OMP_GET_THREAD_NUM()
 
 !.......Initialize to zero for each element
             do iee=1,nee
@@ -162,24 +218,24 @@
 !...........QUADRATURE LOOP BEGINS.........................!
             do ig=1,nquad3
 !                call sf36o(gaus(1,ig),xl1,det,sh,1,xs)
-                 include "sf3d8n.h"
+                 include "sf3d8nc.h"
                 det=dabs(det)
 !;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-               if(ig.eq.nquad3.and.ie.eq.10) then
-              sumasn=sh(0,1)+sh(0,2)+sh(0,3)+sh(0,4)+sh(0,5)+sh(0,6)
-     &               +sh(0,7)+sh(0,8)
-
-              sumasn1=sh(1,1)+sh(1,2)+sh(1,3)+sh(1,4)+sh(1,5)+sh(1,6)
-     &               +sh(1,7)+sh(1,8)
-              sumasn2=sh(2,1)+sh(2,2)+sh(2,3)+sh(2,4)+sh(2,5)+sh(2,6)
-     &               +sh(2,7)+sh(2,8)
-              sumasn3=sh(3,1)+sh(3,2)+sh(3,3)+sh(3,4)+sh(3,5)+sh(3,6)
-     &               +sh(3,7)+sh(3,8)
-
-              open(unit=6,status='unknown', file = 'result')
-              write(6,*) sumasn,sumasn1,sumasn2,sumasn3
-              close (6)
-              endif
+!               if(ig.eq.nquad3.and.ie.eq.10) then
+!              sumasn=sh(0,1)+sh(0,2)+sh(0,3)+sh(0,4)+sh(0,5)+sh(0,6)
+!     &               +sh(0,7)+sh(0,8)
+!
+!              sumasn1=sh(1,1)+sh(1,2)+sh(1,3)+sh(1,4)+sh(1,5)+sh(1,6)
+!     &               +sh(1,7)+sh(1,8)
+!              sumasn2=sh(2,1)+sh(2,2)+sh(2,3)+sh(2,4)+sh(2,5)+sh(2,6)
+!     &               +sh(2,7)+sh(2,8)
+!              sumasn3=sh(3,1)+sh(3,2)+sh(3,3)+sh(3,4)+sh(3,5)+sh(3,6)
+!     &               +sh(3,7)+sh(3,8)
+!
+!              open(unit=6,status='unknown', file = 'result')
+!              write(6,*) sumasn,sumasn1,sumasn2,sumasn3
+!              close (6)
+!              endif
 
 !;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 !...........Conservation variables at integration point
@@ -242,19 +298,19 @@
                         ut(idof)= (unp1(idof)-un(idof))/dt
                     endif
                 end do
-	  if(turbulent)then
-	    nut_np1= sh(0,1)* dl1_t(1,1) + sh(0,2)* dl1_t(1,2)
+           if(turbulent)then
+            nut_np1= sh(0,1)* dl1_t(1,1) + sh(0,2)* dl1_t(1,2)
      &             + sh(0,3)* dl1_t(1,3) + sh(0,4)* dl1_t(1,4)
      &             + sh(0,5)* dl1_t(1,5) + sh(0,6)* dl1_t(1,6)
      &             + sh(0,7)* dl1_t(1,7) + sh(0,8)* dl1_t(1,8)
 
-	    nut_n  = sh(0,1)* dlo_t(1,1) + sh(0,2)* dlo_t(1,2)
+            nut_n  = sh(0,1)* dlo_t(1,1) + sh(0,2)* dlo_t(1,2)
      &             + sh(0,3)* dlo_t(1,3) + sh(0,4)* dlo_t(1,4)
      &             + sh(0,5)* dlo_t(1,5) + sh(0,6)* dlo_t(1,6)
      &             + sh(0,7)* dlo_t(1,7) + sh(0,8)* dlo_t(1,8)
 
-	    nut    = alpha * nut_np1 + oma * nut_n 
-	  endif
+            nut    = alpha * nut_np1 + oma * nut_n 
+           endif
 
 !.......Primitive variables at integration point
                 up(1) = uc(1)              !density
@@ -287,93 +343,93 @@
                 vw   = v*w
 
                 a1(1,1) =  0.e0
-                a1(1,2) =  1.e0
-                a1(1,3) =  0.e0
-                a1(1,4) =  0.e0
-                a1(1,5) =  0.e0
-
                 a1(2,1) = -tmgb2*uu + gm1b2*(vv+ww)
-                a1(2,2) = -gm3*u
-                a1(2,3) = -gm1v
-                a1(2,4) = -gm1w
-                a1(2,5) =  gm1
-
                 a1(3,1) = -uv
-                a1(3,2) =  v
-                a1(3,3) =  u
-                a1(3,4) =  0.e0
-                a1(3,5) =  0.e0
-
                 a1(4,1) = -uw
-                a1(4,2) =  w
-                a1(4,3) =  0.e0
-                a1(4,4) =  u
-                a1(4,5) =  0.e0
-
                 a1(5,1) = -ge*u + gm1u*(uu+vv+ww)
+
+                a1(1,2) =  1.e0
+                a1(2,2) = -gm3*u
+                a1(3,2) =  v
+                a1(4,2) =  w
                 a1(5,2) =  ge - gm1b2*(uu+uu+uu+vv+ww)
+
+                a1(1,3) =  0.e0
+                a1(2,3) = -gm1v
+                a1(3,3) =  u
+                a1(4,3) =  0.e0
                 a1(5,3) = -gm1uv
+
+                a1(1,4) =  0.e0
+                a1(2,4) = -gm1w
+                a1(3,4) =  0.e0
+                a1(4,4) =  u
                 a1(5,4) = -gm1uw
+
+                a1(1,5) =  0.e0
+                a1(2,5) =  gm1
+                a1(3,5) =  0.e0
+                a1(4,5) =  0.e0
                 a1(5,5) =  g*u
 
                 a2(1,1) =  0.e0
-                a2(1,2) =  0.e0
-                a2(1,3) =  1.e0
-                a2(1,4) =  0.e0
-                a2(1,5) =  0.e0
-
                 a2(2,1) = -uv
-                a2(2,2) =  v
-                a2(2,3) =  u
-                a2(2,4) =  0.e0
-                a2(2,5) =  0.e0
-
                 a2(3,1) = -tmgb2*vv + gm1b2*(uu+ww)
-                a2(3,2) = -gm1u
-                a2(3,3) = -gm3*v
-                a2(3,4) = -gm1w
-                a2(3,5) =  gm1
-
                 a2(4,1) = -vw
-                a2(4,2) =  0.e0
-                a2(4,3) =  w
-                a2(4,4) =  v
-                a2(4,5) =  0.e0
-
                 a2(5,1) = -ge*v + gm1v*(uu+vv+ww)
+
+                a2(1,2) =  0.e0
+                a2(2,2) =  v
+                a2(3,2) = -gm1u
+                a2(4,2) =  0.e0
                 a2(5,2) = -gm1uv
+
+                a2(1,3) =  1.e0
+                a2(2,3) =  u
+                a2(3,3) = -gm3*v
+                a2(4,3) =  w
                 a2(5,3) =  ge - gm1b2*(vv+vv+vv+uu+ww)
+
+                a2(1,4) =  0.e0
+                a2(2,4) =  0.e0
+                a2(3,4) = -gm1w
+                a2(4,4) =  v
                 a2(5,4) = -gm1vw
+
+                a2(1,5) =  0.e0
+                a2(2,5) =  0.e0
+                a2(3,5) =  gm1
+                a2(4,5) =  0.e0
                 a2(5,5) =  g*v
 
                 a3(1,1) =  0.e0
-                a3(1,2) =  0.e0
-                a3(1,3) =  0.e0
-                a3(1,4) =  1.e0
-                a3(1,5) =  0.e0
-
                 a3(2,1) = -uw
-                a3(2,2) =  w
-                a3(2,3) =  0.e0
-                a3(2,4) =  u
-                a3(2,5) =  0.e0
-
                 a3(3,1) = -vw
-                a3(3,2) =  0.e0
-                a3(3,3) =  w
-                a3(3,4) =  v
-                a3(3,5) =  0.e0
-
                 a3(4,1) = -tmgb2*ww + gm1b2*(uu+vv)
-                a3(4,2) = -gm1u
-                a3(4,3) = -gm1v
-                a3(4,4) = -gm3*w
-                a3(4,5) =  gm1
-
                 a3(5,1) = -ge*w + gm1w*(uu+vv+ww)
+
+                a3(1,2) =  0.e0
+                a3(2,2) =  w
+                a3(3,2) =  0.e0
+                a3(4,2) = -gm1u
                 a3(5,2) = -gm1uw
+
+                a3(1,3) =  0.e0
+                a3(2,3) =  0.e0
+                a3(3,3) =  w
+                a3(4,3) = -gm1v
                 a3(5,3) = -gm1vw
+
+                a3(1,4) =  1.e0
+                a3(2,4) =  u
+                a3(3,4) =  v
+                a3(4,4) = -gm3*w
                 a3(5,4) =  ge - gm1b2*(ww+ww+ww+uu+vv)
+
+                a3(1,5) =  0.e0
+                a3(2,5) =  0.e0
+                a3(3,5) =  0.e0
+                a3(4,5) =  gm1
                 a3(5,5) =  g*w
 
 
@@ -382,7 +438,8 @@
                     roi = uc(5)-
      &                0.5e0*(uc(2)*uc(2)+uc(3)*uc(3)+uc(4)*uc(4))/uc(1)
                     if(roi.le.0.0)then
-                        print *,"-ve roi Element No:",ie,"  igaus:",ig
+                        print *,"blkiter:-ve roi Element No:",ie,
+     +                   "  igaus:",ig
                     endif  
                     entropy = log(gm1*roi/uc(1)**gamma)
                     roii = 1.0d0/roi
@@ -406,35 +463,35 @@
                     temp = -1.0d0/roi/v5
 
 !.......Form A0 inverse
-                    a0i(1,1)=temp*(xk1*xk1+g)
-                    a0i(1,2)=temp*xk1*v2
-                    a0i(1,3)=temp*xk1*v3
-                    a0i(1,4)=temp*xk1*v4
-                    a0i(1,5)=temp*(xk1+1.0e0)*v5
+                    a0i(1,1) = temp*(xk1*xk1+g)
+                    a0i(2,1) = temp*xk1*v2
+                    a0i(3,1) = temp*xk1*v3
+                    a0i(4,1) = temp*xk1*v4
+                    a0i(5,1) = temp*(xk1+1.0e0)*v5
 
-                    a0i(2,1)=     a0i(1,2)
-                    a0i(2,2)=temp*(v2*v2-v5)
-                    a0i(2,3)=temp*(-xd1)
-                    a0i(2,4)=temp*(-xd2)
-                    a0i(2,5)=temp*e1
+                    a0i(1,2) = a0i(2,1)
+                    a0i(2,2) = temp*(v2*v2-v5)
+                    a0i(3,2) = temp*(-xd1)
+                    a0i(4,2) = temp*(-xd2)
+                    a0i(5,2) = temp*e1
 
-                    a0i(3,1)=     a0i(1,3)
-                    a0i(3,2)=     a0i(2,3) 
-                    a0i(3,3)=temp*(v3*v3-v5)
-                    a0i(3,4)=temp*(-xd3)
-                    a0i(3,5)=temp*e2
+                    a0i(1,3) = a0i(3,1)
+                    a0i(2,3) = a0i(3,2) 
+                    a0i(3,3) = temp*(v3*v3-v5)
+                    a0i(4,3) = temp*(-xd3)
+                    a0i(5,3) = temp*e2
 
-                    a0i(4,1)=     a0i(1,4)
-                    a0i(4,2)=     a0i(2,4) 
-                    a0i(4,3)=     a0i(3,4)
-                    a0i(4,4)=temp*(v4*v4-v5)
-                    a0i(4,5)=temp*e3
+                    a0i(1,4) = a0i(4,1)
+                    a0i(2,4) = a0i(4,2) 
+                    a0i(3,4) = a0i(4,3)
+                    a0i(4,4) = temp*(v4*v4-v5)
+                    a0i(5,4) = temp*e3
 
-                    a0i(5,1)=     a0i(1,5)
-                    a0i(5,2)=     a0i(2,5)
-                    a0i(5,3)=     a0i(3,5)
-                    a0i(5,4)=     a0i(4,5)
-                    a0i(5,5)=temp*v5*v5
+                    a0i(1,5) = a0i(5,1)
+                    a0i(2,5) = a0i(5,2)
+                    a0i(3,5) = a0i(5,3)
+                    a0i(4,5) = a0i(5,4)
+                    a0i(5,5) = temp*v5*v5
 
 
 !.......Residual computation
@@ -501,40 +558,25 @@
      +                    a0i(5,3)*res(3) + a0i(5,4)*res(4) +
      +                    a0i(5,5)*res(5)                    )
 
-                    dv(1,1) =
-     &                  cf11*ux(1) + cf12*uy(1) + cf13*uz(1)
-                    dv(1,2) =
-     &                  cf11*ux(2) + cf12*uy(2) + cf13*uz(2)
-                    dv(1,3) =
-     &                  cf11*ux(3) + cf12*uy(3) + cf13*uz(3)
-                    dv(1,4) =
-     &                  cf11*ux(4) + cf12*uy(4) + cf13*uz(4)
-                    dv(1,5) =
-     &                  cf11*ux(5) + cf12*uy(5) + cf13*uz(5)
+                    dv(1,1) = cf11*ux(1) + cf12*uy(1) + cf13*uz(1)
+                    dv(2,1) = cf21*ux(1) + cf22*uy(1) + cf23*uz(1)
+                    dv(3,1) = cf31*ux(1) + cf32*uy(1) + cf33*uz(1)
 
-                    dv(2,1) =
-     &                  cf21*ux(1) + cf22*uy(1) + cf23*uz(1)
-                    dv(2,2) =
-     &                  cf21*ux(2) + cf22*uy(2) + cf23*uz(2)
-                    dv(2,3) =
-     &                  cf21*ux(3) + cf22*uy(3) + cf23*uz(3)
-                    dv(2,4) =
-     &                  cf21*ux(4) + cf22*uy(4) + cf23*uz(4)
-                    dv(2,5) =
-     &                  cf21*ux(5) + cf22*uy(5) + cf23*uz(5)
+                    dv(1,2) = cf11*ux(2) + cf12*uy(2) + cf13*uz(2)
+                    dv(2,2) = cf21*ux(2) + cf22*uy(2) + cf23*uz(2)
+                    dv(3,2) = cf31*ux(2) + cf32*uy(2) + cf33*uz(2)
 
-                    dv(3,1) =
-     &                  cf31*ux(1) + cf32*uy(1) + cf33*uz(1)
-                    dv(3,2) =
-     &                  cf31*ux(2) + cf32*uy(2) + cf33*uz(2)
-                    dv(3,3) =
-     &                  cf31*ux(3) + cf32*uy(3) + cf33*uz(3)
-                    dv(3,4) =
-     &                  cf31*ux(4) + cf32*uy(4) + cf33*uz(4)
-                    dv(3,5) =
-     &                  cf31*ux(5) + cf32*uy(5) + cf33*uz(5)
+                    dv(1,3) = cf11*ux(3) + cf12*uy(3) + cf13*uz(3)
+                    dv(2,3) = cf21*ux(3) + cf22*uy(3) + cf23*uz(3)
+                    dv(3,3) = cf31*ux(3) + cf32*uy(3) + cf33*uz(3)
 
+                    dv(1,4) = cf11*ux(4) + cf12*uy(4) + cf13*uz(4)
+                    dv(2,4) = cf21*ux(4) + cf22*uy(4) + cf23*uz(4)
+                    dv(3,4) = cf31*ux(4) + cf32*uy(4) + cf33*uz(4)
 
+                    dv(1,5) = cf11*ux(5) + cf12*uy(5) + cf13*uz(5)
+                    dv(2,5) = cf21*ux(5) + cf22*uy(5) + cf23*uz(5)
+                    dv(3,5) = cf31*ux(5) + cf32*uy(5) + cf33*uz(5)
 
                     rden = torr + 
      +                  dv(1,1) * (a0i(1,1)*dv(1,1) + a0i(1,2)*dv(1,2)
@@ -623,12 +665,12 @@ c.......Exponential Law
 
                 dyn_eddy=0.0d0
 
-	  if(turbulent)then
-	    ki = nut/(xmu/ro)
-	    fv1= (ki**3)/(ki**3+cv1**3)
-	    kin_eddy = nut*fv1
-	    dyn_eddy = kin_eddy*ro
-	  endif
+          if(turbulent)then
+            ki = nut/(xmu/ro)
+            fv1= (ki**3)/(ki**3+cv1**3)
+            kin_eddy = nut*fv1
+            dyn_eddy = kin_eddy*ro
+          endif
 
                 xla =-2.0d0/3.0d0*(xmu + dyn_eddy)  
                 r   = 1.0d0/ro
@@ -638,238 +680,275 @@ c.......Exponential Law
                 xvv = (xkcv*0.5d0 -xmu)*vv
                 
                 k11(1,1) = 0.0e0
+                k11(2,1) = -u*4.0d0/3.0d0*xmu*r
+                k11(3,1) = -v*xmu*r
+                k11(4,1) = -w*xmu*r
+                k11(5,1) = (-xkcv*xi + xvv - xmu/3.0d0*u*u)*r
+
                 k11(1,2) = 0.0e0
-                k11(1,3) = 0.0e0
-                k11(1,4) = 0.0e0
-                k11(1,5) = 0.0e0
-                k11(2,1) =-u*4.0d0/3.0d0*xmu*r
                 k11(2,2) =   4.0d0/3.0d0*xmu*r
-                k11(2,3) = 0.0e0
-                k11(2,4) = 0.0e0
-                k11(2,5) = 0.0e0
-                k11(3,1) =-v*xmu            *r
                 k11(3,2) = 0.0e0
-                k11(3,3) =   xmu            *r
-                k11(3,4) = 0.0e0
-                k11(3,5) = 0.0e0
-                k11(4,1) =-w*xmu            *r
                 k11(4,2) = 0.0e0
+                k11(5,2) = (4.0d0/3.0d0*xmu-xkcv)*u*r
+
+                k11(1,3) = 0.0e0
+                k11(2,3) = 0.0e0
+                k11(3,3) = xmu*r
                 k11(4,3) = 0.0e0
-                k11(4,4) =   xmu            *r
+                k11(5,3) = (xmu-xkcv)*v*r
+
+                k11(1,4) = 0.0e0
+                k11(2,4) = 0.0e0
+                k11(3,4) = 0.0e0
+                k11(4,4) = xmu*r
+                k11(5,4) = (xmu-xkcv)*w*r
+
+                k11(1,5) = 0.0e0
+                k11(2,5) = 0.0e0
+                k11(3,5) = 0.0e0
                 k11(4,5) = 0.0e0
-                k11(5,1) =(-xkcv*xi + xvv - xmu/3.0d0*u*u) * r
-                k11(5,2) =(4.0d0/3.0d0*xmu-xkcv)*u*r
-                k11(5,3) =(xmu - xkcv)*v    *r
-                k11(5,4) =(xmu - xkcv)*w    *r
-                k11(5,5) = xkcv             *r
+                k11(5,5) = xkcv*r
         
                 k12(1,1) = 0.0e0
-                k12(1,2) = 0.0e0
-                k12(1,3) = 0.0e0
-                k12(1,4) = 0.0e0
-                k12(1,5) = 0.0e0
-                k12(2,1) = v*2.0d0/3.0d0*xmu *r
-                k12(2,2) = 0.0e0
-                k12(2,3) =  -2.0d0/3.0d0*xmu *r
-                k12(2,4) = 0.0e0
-                k12(2,5) = 0.0e0
-                k12(3,1) = -u*xmu            *r
-                k12(3,2) =  xmu              *r
-                k12(3,3) = 0.0e0
-                k12(3,4) = 0.0e0
-                k12(3,5) = 0.0e0
+                k12(2,1) = v*2.0d0/3.0d0*xmu*r
+                k12(3,1) = -u*xmu*r
                 k12(4,1) = 0.0e0
+                k12(5,1) = -xmu/3.0d0*u*v*r
+
+                k12(1,2) = 0.0e0
+                k12(2,2) = 0.0e0
+                k12(3,2) = xmu*r
                 k12(4,2) = 0.0e0
+                k12(5,2) = xmu*v*r
+
+                k12(1,3) = 0.0e0
+                k12(2,3) = -2.0d0/3.0d0*xmu*r
+                k12(3,3) = 0.0e0
                 k12(4,3) = 0.0e0
-                k12(4,4) = 0.0e0
-                k12(4,5) = 0.0e0
-                k12(5,1) = -xmu/3.0d0 *u*v   *r
-                k12(5,2) =  xmu * v          *r
                 k12(5,3) = -xmu*2.0d0/3.0d0*u*r
+
+                k12(1,4) = 0.0e0
+                k12(2,4) = 0.0e0
+                k12(3,4) = 0.0e0
+                k12(4,4) = 0.0e0
                 k12(5,4) = 0.0e0
+
+                k12(1,5) = 0.0e0
+                k12(2,5) = 0.0e0
+                k12(3,5) = 0.0e0
+                k12(4,5) = 0.0e0
                 k12(5,5) = 0.0e0
         
                 k13(1,1) = 0.0e0
-                k13(1,2) = 0.0e0
-                k13(1,3) = 0.0e0
-                k13(1,4) = 0.0e0
-                k13(1,5) = 0.0e0
-                k13(2,1) = w*2.0d0/3.0d0*xmu *r
-                k13(2,2) = 0.0e0
-                k13(2,3) = 0.0e0
-                k13(2,4) =  -2.0d0/3.0d0*xmu *r
-                k13(2,5) = 0.0e0
+                k13(2,1) = w*2.0d0/3.0d0*xmu*r
                 k13(3,1) = 0.0e0
+                k13(4,1) = -u*xmu*r
+                k13(5,1) = -xmu/3.0d0*u*w*r
+
+                k13(1,2) = 0.0e0
+                k13(2,2) = 0.0e0
                 k13(3,2) = 0.0e0
+                k13(4,2) = xmu*r
+                k13(5,2) = xmu*w*r
+
+                k13(1,3) = 0.0e0
+                k13(2,3) = 0.0e0
                 k13(3,3) = 0.0e0
-                k13(3,4) = 0.0e0
-                k13(3,5) = 0.0e0
-                k13(4,1) = -u*xmu            *r
-                k13(4,2) =  xmu              *r
                 k13(4,3) = 0.0e0
-                k13(4,4) = 0.0e0
-                k13(4,5) = 0.0e0
-                k13(5,1) = -xmu/3.0d0 *u*w   *r
-                k13(5,2) =  xmu * w          *r
                 k13(5,3) = 0.0e0
+
+                k13(1,4) = 0.0e0
+                k13(2,4) = -2.0d0/3.0d0*xmu*r
+                k13(3,4) = 0.0e0
+                k13(4,4) = 0.0e0
                 k13(5,4) = -xmu*2.0d0/3.0d0*u*r
+
+                k13(1,5) = 0.0e0
+                k13(2,5) = 0.0e0
+                k13(3,5) = 0.0e0
+                k13(4,5) = 0.0e0
                 k13(5,5) = 0.0e0
         
                 k21(1,1) = 0.0e0
-                k21(1,2) = 0.0e0
-                k21(1,3) = 0.0e0
-                k21(1,4) = 0.0e0
-                k21(1,5) = 0.0e0
-                k21(2,1) = -v*xmu            *r
-                k21(2,2) = 0.0e0
-                k21(2,3) =  xmu              *r
-                k21(2,4) = 0.0e0
-                k21(2,5) = 0.0e0
-                k21(3,1) = u*2.0d0/3.0d0*xmu *r
-                k21(3,2) =  -2.0d0/3.0d0*xmu *r
-                k21(3,3) = 0.0e0
-                k21(3,4) = 0.0e0
-                k21(3,5) = 0.0e0
+                k21(2,1) = -v*xmu*r
+                k21(3,1) = u*2.0d0/3.0d0*xmu*r
                 k21(4,1) = 0.0e0
+                k21(5,1) = -xmu/3.0d0*u*v*r
+
+                k21(1,2) = 0.0e0
+                k21(2,2) = 0.0e0
+                k21(3,2) = -2.0d0/3.0d0*xmu*r
                 k21(4,2) = 0.0e0
-                k21(4,3) = 0.0e0
-                k21(4,4) = 0.0e0
-                k21(4,5) = 0.0e0
-                k21(5,1) = -xmu/3.0d0 *u*v   *r
                 k21(5,2) = -xmu*2.0d0/3.0d0*v*r
-                k21(5,3) =  xmu * u          *r
+
+                k21(1,3) = 0.0e0
+                k21(2,3) = xmu*r
+                k21(3,3) = 0.0e0
+                k21(4,3) = 0.0e0
+                k21(5,3) = xmu*u*r
+
+                k21(1,4) = 0.0e0
+                k21(2,4) = 0.0e0
+                k21(3,4) = 0.0e0
+                k21(4,4) = 0.0e0
                 k21(5,4) = 0.0e0
+
+                k21(1,5) = 0.0e0
+                k21(2,5) = 0.0e0
+                k21(3,5) = 0.0e0
+                k21(4,5) = 0.0e0
                 k21(5,5) = 0.0e0
         
                 k22(1,1) = 0.0e0
+                k22(2,1) = -u*xmu*r
+                k22(3,1) = -v*4.0d0/3.0d0*xmu*r
+                k22(4,1) = -w*xmu*r
+                k22(5,1) = (-xkcv*xi+xvv-xmu/3.0d0*v*v)*r
+
                 k22(1,2) = 0.0e0
-                k22(1,3) = 0.0e0
-                k22(1,4) = 0.0e0
-                k22(1,5) = 0.0e0
-                k22(2,1) =-u*xmu            *r
-                k22(2,2) =   xmu            *r
-                k22(2,3) = 0.0e0
-                k22(2,4) = 0.0e0
-                k22(2,5) = 0.0e0
-                k22(3,1) =-v*4.0d0/3.0d0*xmu*r
+                k22(2,2) = xmu*r
                 k22(3,2) = 0.0e0
-                k22(3,3) =   4.0d0/3.0d0*xmu*r
-                k22(3,4) = 0.0e0
-                k22(3,5) = 0.0e0
-                k22(4,1) =-w*xmu            *r
                 k22(4,2) = 0.0e0
+                k22(5,2) = (xmu-xkcv)*u*r
+
+                k22(1,3) = 0.0e0
+                k22(2,3) = 0.0e0
+                k22(3,3) = 4.0d0/3.0d0*xmu*r
                 k22(4,3) = 0.0e0
-                k22(4,4) =   xmu            *r
+                k22(5,3) = (4.0d0/3.0d0*xmu-xkcv)*v*r
+
+                k22(1,4) = 0.0e0
+                k22(2,4) = 0.0e0
+                k22(3,4) = 0.0e0
+                k22(4,4) = xmu*r
+                k22(5,4) = (xmu-xkcv)*w*r
+
+                k22(1,5) = 0.0e0
+                k22(2,5) = 0.0e0
+                k22(3,5) = 0.0e0
                 k22(4,5) = 0.0e0
-                k22(5,1) =(-xkcv*xi + xvv - xmu/3.0d0*v*v) * r
-                k22(5,2) =(xmu - xkcv)*u    *r
-                k22(5,3) =(4.0d0/3.0d0*xmu-xkcv)*v*r
-                k22(5,4) =(xmu - xkcv)*w    *r
-                k22(5,5) = xkcv             *r
+                k22(5,5) = xkcv*r
         
                 k23(1,1) = 0.0e0
-                k23(1,2) = 0.0e0
-                k23(1,3) = 0.0e0
-                k23(1,4) = 0.0e0
-                k23(1,5) = 0.0e0
                 k23(2,1) = 0.0e0
+                k23(3,1) = w*2.0d0/3.0d0*xmu*r
+                k23(4,1) = -v*xmu*r
+                k23(5,1) = -xmu/3.0d0*v*w*r
+
+                k23(1,2) = 0.0e0
                 k23(2,2) = 0.0e0
-                k23(2,3) = 0.0e0
-                k23(2,4) = 0.0e0
-                k23(2,5) = 0.0e0
-                k23(3,1) = w*2.0d0/3.0d0*xmu *r
                 k23(3,2) = 0.0e0
-                k23(3,3) = 0.0e0
-                k23(3,4) =  -2.0d0/3.0d0*xmu *r
-                k23(3,5) = 0.0e0
-                k23(4,1) = -v*xmu            *r
                 k23(4,2) = 0.0e0
-                k23(4,3) =  xmu              *r
-                k23(4,4) = 0.0e0
-                k23(4,5) = 0.0e0
-                k23(5,1) = -xmu/3.0d0 *v*w   *r
                 k23(5,2) = 0.0e0
-                k23(5,3) =  xmu * w          *r
+
+                k23(1,3) = 0.0e0
+                k23(2,3) = 0.0e0
+                k23(3,3) = 0.0e0
+                k23(4,3) = xmu*r
+                k23(5,3) = xmu*w*r
+
+                k23(1,4) = 0.0e0
+                k23(2,4) = 0.0e0
+                k23(3,4) = -2.0d0/3.0d0*xmu*r
+                k23(4,4) = 0.0e0
                 k23(5,4) = -xmu*2.0d0/3.0d0*v*r
+
+                k23(1,5) = 0.0e0
+                k23(2,5) = 0.0e0
+                k23(3,5) = 0.0e0
+                k23(4,5) = 0.0e0
                 k23(5,5) = 0.0e0
         
                 k31(1,1) = 0.0e0
-                k31(1,2) = 0.0e0
-                k31(1,3) = 0.0e0
-                k31(1,4) = 0.0e0
-                k31(1,5) = 0.0e0
-                k31(2,1) = -w*xmu            *r
-                k31(2,2) = 0.0e0
-                k31(2,3) = 0.0e0
-                k31(2,4) =  xmu              *r
-                k31(2,5) = 0.0e0
+                k31(2,1) = -w*xmu*r
                 k31(3,1) = 0.0e0
+                k31(4,1) = u*2.0d0/3.0d0*xmu*r
+                k31(5,1) = -xmu/3.0d0*u*w*r
+
+                k31(1,2) = 0.0e0
+                k31(2,2) = 0.0e0
                 k31(3,2) = 0.0e0
-                k31(3,3) = 0.0e0
-                k31(3,4) = 0.0e0
-                k31(3,5) = 0.0e0
-                k31(4,1) = u*2.0d0/3.0d0*xmu *r
-                k31(4,2) =  -2.0d0/3.0d0*xmu *r
-                k31(4,3) = 0.0e0
-                k31(4,4) = 0.0e0
-                k31(4,5) = 0.0e0
-                k31(5,1) = -xmu/3.0d0 *u*w   *r
+                k31(4,2) = -2.0d0/3.0d0*xmu*r
                 k31(5,2) = -xmu*2.0d0/3.0d0*w*r
+
+                k31(1,3) = 0.0e0
+                k31(2,3) = 0.0e0
+                k31(3,3) = 0.0e0
+                k31(4,3) = 0.0e0
                 k31(5,3) = 0.0e0
-                k31(5,4) =  xmu * u          *r
+
+                k31(1,4) = 0.0e0
+                k31(2,4) = xmu*r
+                k31(3,4) = 0.0e0
+                k31(4,4) = 0.0e0
+                k31(5,4) = xmu*u*r
+
+                k31(1,5) = 0.0e0
+                k31(2,5) = 0.0e0 
+                k31(3,5) = 0.0e0
+                k31(4,5) = 0.0e0
                 k31(5,5) = 0.0e0
         
                 k32(1,1) = 0.0e0
-                k32(1,2) = 0.0e0
-                k32(1,3) = 0.0e0
-                k32(1,4) = 0.0e0
-                k32(1,5) = 0.0e0
                 k32(2,1) = 0.0e0
+                k32(3,1) = -w*xmu*r
+                k32(4,1) = v*2.0d0/3.0d0*xmu*r
+                k32(5,1) = -xmu/3.0d0*v*w*r
+
+                k32(1,2) = 0.0e0
                 k32(2,2) = 0.0e0
-                k32(2,3) = 0.0e0
-                k32(2,4) = 0.0e0
-                k32(2,5) = 0.0e0
-                k32(3,1) = -w*xmu            *r
                 k32(3,2) = 0.0e0
-                k32(3,3) = 0.0e0
-                k32(3,4) =  xmu              *r
-                k32(3,5) = 0.0e0
-                k32(4,1) = v*2.0d0/3.0d0*xmu *r
                 k32(4,2) = 0.0e0
-                k32(4,3) =  -2.0d0/3.0d0*xmu *r
-                k32(4,4) = 0.0e0
-                k32(4,5) = 0.0e0
-                k32(5,1) = -xmu/3.0d0 *v*w   *r
                 k32(5,2) = 0.0e0
+
+                k32(1,3) = 0.0e0
+                k32(2,3) = 0.0e0
+                k32(3,3) = 0.0e0
+                k32(4,3) = -2.0d0/3.0d0*xmu*r
                 k32(5,3) = -xmu*2.0d0/3.0d0*w*r
-                k32(5,4) =  xmu * v          *r
+
+
+                k32(1,4) = 0.0e0
+                k32(2,4) = 0.0e0
+                k32(3,4) = xmu*r
+                k32(4,4) = 0.0e0
+                k32(5,4) = xmu*v*r
+
+                k32(1,5) = 0.0e0
+                k32(2,5) = 0.0e0
+                k32(3,5) = 0.0e0
+                k32(4,5) = 0.0e0
                 k32(5,5) = 0.0e0
         
                 k33(1,1) = 0.0e0
+                k33(2,1) = -u*xmu*r
+                k33(3,1) = -v*xmu*r
+                k33(4,1) = -w*4.0d0/3.0d0*xmu*r
+                k33(5,1) = (-xkcv*xi+xvv-xmu/3.0d0*w*w)*r
+
                 k33(1,2) = 0.0e0
-                k33(1,3) = 0.0e0
-                k33(1,4) = 0.0e0
-                k33(1,5) = 0.0e0
-                k33(2,1) =-u*xmu            *r
-                k33(2,2) =   xmu            *r
-                k33(2,3) = 0.0e0
-                k33(2,4) = 0.0e0
-                k33(2,5) = 0.0e0
-                k33(3,1) =-v*xmu            *r
+                k33(2,2) = xmu*r
                 k33(3,2) = 0.0e0
-                k33(3,3) =   xmu            *r
-                k33(3,4) = 0.0e0
-                k33(3,5) = 0.0e0
-                k33(4,1) =-w*4.0d0/3.0d0*xmu*r
                 k33(4,2) = 0.0e0
+                k33(5,2) = (xmu-xkcv)*u*r
+
+                k33(1,3) = 0.0e0
+                k33(2,3) = 0.0e0
+                k33(3,3) = xmu*r
                 k33(4,3) = 0.0e0
-                k33(4,4) =   4.0d0/3.0d0*xmu*r
-                k33(4,5) = 0.0e0
-                k33(5,1) =(-xkcv*xi + xvv - xmu/3.0d0*w*w) * r
-                k33(5,2) =(xmu - xkcv)*u    *r
-                k33(5,3) =(xmu - xkcv)*v    *r
-                k33(5,4) =(4.0d0/3.0d0*xmu-xkcv)*w*r
-                k33(5,5) = xkcv             *r
+                k33(5,3) = (xmu-xkcv)*v*r
+
+                k33(1,4) = 0.0e0
+                k33(2,4) = 0.0e0
+                k33(3,4) = 0.0e0
+                k33(4,4) = 4.0d0/3.0d0*xmu*r
+                k33(5,4) = (4.0d0/3.0d0*xmu-xkcv)*w*r
+
+                k33(1,5) = 0.0e0  
+                k33(2,5) = 0.0e0
+                k33(3,5) = 0.0e0
+                k33(4,5) = 0.0e0 
+                k33(5,5) = xkcv*r
 
                 umag = sqrt(up(2)*up(2) + up(3)*up(3) + up(4)*up(4))
                 temp = (up(5)-0.5e0*umag*umag)/cv
@@ -880,94 +959,94 @@ c.......Exponential Law
 !.......hel = Element Length (min side len / max side len / in the dir of vel)
 !.......USE ONE OF THE OPTIONS
 !	murali
-		temp1=sqrt(dl1(1,1)*dl1(1,1)+dl1(2,1)*dl1(2,1)
-     $			  +dl1(3,1)*dl1(3,1))
-	        temp2=sqrt(dl1(1,2)*dl1(1,2)+dl1(2,2)*dl1(2,2)
-     $			  +dl1(3,2)*dl1(3,2))
-	        temp3=sqrt(dl1(1,3)*dl1(1,3)+dl1(2,3)*dl1(2,3)
-     $			  +dl1(3,3)*dl1(3,3))
-         	temp4=sqrt(dl1(1,4)*dl1(1,4)+dl1(2,4)*dl1(2,4)
-     $			  +dl1(3,4)*dl1(3,4))
-         	temp5=sqrt(dl1(1,5)*dl1(1,5)+dl1(2,5)*dl1(2,5)
-     $			  +dl1(3,5)*dl1(3,5))
-         	temp6=sqrt(dl1(1,6)*dl1(1,6)+dl1(2,6)*dl1(2,6)
-     $			  +dl1(3,6)*dl1(3,6))
-                temp7=sqrt(dl1(1,7)*dl1(1,7)+dl1(2,7)*dl1(2,7)
-     $                    +dl1(3,7)*dl1(3,7))
-                temp8=sqrt(dl1(1,8)*dl1(1,8)+dl1(2,8)*dl1(2,8)
-     $                    +dl1(3,8)*dl1(3,8))
+!		temp1=sqrt(dl1(1,1)*dl1(1,1)+dl1(2,1)*dl1(2,1)
+!     $			  +dl1(3,1)*dl1(3,1))
+!	        temp2=sqrt(dl1(1,2)*dl1(1,2)+dl1(2,2)*dl1(2,2)
+!     $			  +dl1(3,2)*dl1(3,2))
+!	        temp3=sqrt(dl1(1,3)*dl1(1,3)+dl1(2,3)*dl1(2,3)
+!     $			  +dl1(3,3)*dl1(3,3))
+!         	temp4=sqrt(dl1(1,4)*dl1(1,4)+dl1(2,4)*dl1(2,4)
+!     $			  +dl1(3,4)*dl1(3,4))
+!         	temp5=sqrt(dl1(1,5)*dl1(1,5)+dl1(2,5)*dl1(2,5)
+!     $			  +dl1(3,5)*dl1(3,5))
+!         	temp6=sqrt(dl1(1,6)*dl1(1,6)+dl1(2,6)*dl1(2,6)
+!     $			  +dl1(3,6)*dl1(3,6))
+!                temp7=sqrt(dl1(1,7)*dl1(1,7)+dl1(2,7)*dl1(2,7)
+!     $                    +dl1(3,7)*dl1(3,7))
+!                temp8=sqrt(dl1(1,8)*dl1(1,8)+dl1(2,8)*dl1(2,8)
+!     $                    +dl1(3,8)*dl1(3,8))
+!
+!        	umag0=sh(0,1)*temp1+sh(0,2)*temp2+sh(0,3)*temp3
+!     $		      	   +sh(0,4)*temp4
+!     $                     +sh(0,5)*temp5+sh(0,6)*temp6
+!     $                     +sh(0,7)*temp7+sh(0,8)*temp8
+!        	umagx=sh(1,1)*temp1+sh(1,2)*temp2+sh(1,3)*temp3
+!     $			   +sh(1,4)*temp4
+!     $                     +sh(1,5)*temp5+sh(1,6)*temp6
+!     $                     +sh(1,7)*temp7+sh(1,8)*temp8
+!        	umagy=sh(2,1)*temp1+sh(2,2)*temp2+sh(2,3)*temp3
+!     $			   +sh(2,4)*temp4
+!     $                     +sh(2,5)*temp5+sh(2,6)*temp6
+!     $                     +sh(2,7)*temp7+sh(2,8)*temp8
+!        	umagz=sh(3,1)*temp1+sh(3,2)*temp2+sh(3,3)*temp3
+!     $			   +sh(3,4)*temp4
+!     $                     +sh(3,5)*temp5+sh(3,6)*temp6
+!     $                     +sh(3,7)*temp7+sh(3,8)*temp8
+!
+!		grad_umag=dsqrt(umagx*umagx+umagy*umagy+umagz*umagz)
 
-        	umag0=sh(0,1)*temp1+sh(0,2)*temp2+sh(0,3)*temp3
-     $		      	   +sh(0,4)*temp4
-     $                     +sh(0,5)*temp5+sh(0,6)*temp6
-     $                     +sh(0,7)*temp7+sh(0,8)*temp8
-        	umagx=sh(1,1)*temp1+sh(1,2)*temp2+sh(1,3)*temp3
-     $			   +sh(1,4)*temp4
-     $                     +sh(1,5)*temp5+sh(1,6)*temp6
-     $                     +sh(1,7)*temp7+sh(1,8)*temp8
-        	umagy=sh(2,1)*temp1+sh(2,2)*temp2+sh(2,3)*temp3
-     $			   +sh(2,4)*temp4
-     $                     +sh(2,5)*temp5+sh(2,6)*temp6
-     $                     +sh(2,7)*temp7+sh(2,8)*temp8
-        	umagz=sh(3,1)*temp1+sh(3,2)*temp2+sh(3,3)*temp3
-     $			   +sh(3,4)*temp4
-     $                     +sh(3,5)*temp5+sh(3,6)*temp6
-     $                     +sh(3,7)*temp7+sh(3,8)*temp8
+                temp1=xl1(1,1)-xl1(1,2)
+                temp2=xl1(2,1)-xl1(2,2)
+                temp3=xl1(3,1)-xl1(3,2)
+                dis1 = sqrt(temp1*temp1+temp2*temp2+temp3*temp3)
+                temp1=xl1(1,1)-xl1(1,3)
+                temp2=xl1(2,1)-xl1(2,3)
+                temp3=xl1(3,1)-xl1(3,3)
+                dis2 = sqrt(temp1*temp1+temp2*temp2+temp3*temp3)
+                temp1=xl1(1,2)-xl1(1,3)
+                temp2=xl1(2,2)-xl1(2,3)
+                temp3=xl1(3,2)-xl1(3,3)
+                dis3 = sqrt(temp1*temp1+temp2*temp2+temp3*temp3)
 
-		grad_umag=dsqrt(umagx*umagx+umagy*umagy+umagz*umagz)
+                he_max=0.2*max(dis1,dis2,dis3)
+                he_min=min(dis1,dis2,dis3)
 
-	        temp1=xl1(1,1)-xl1(1,2)
-	        temp2=xl1(2,1)-xl1(2,2)
-	        temp3=xl1(3,1)-xl1(3,2)
-	        dis1 = sqrt(temp1*temp1+temp2*temp2+temp3*temp3)
-	        temp1=xl1(1,1)-xl1(1,3)
-	        temp2=xl1(2,1)-xl1(2,3)
-	        temp3=xl1(3,1)-xl1(3,3)
-	        dis2 = sqrt(temp1*temp1+temp2*temp2+temp3*temp3)
-	        temp1=xl1(1,2)-xl1(1,3)
-	        temp2=xl1(2,2)-xl1(2,3)
-	        temp3=xl1(3,2)-xl1(3,3)
-	        dis3 = sqrt(temp1*temp1+temp2*temp2+temp3*temp3)
-
-        	he_max=0.2*max(dis1,dis2,dis3)
-		he_min=min(dis1,dis2,dis3)
-
-         if (grad_umag .gt. 1.0e-9) then
-             rx = umagx/grad_umag
-             ry = umagy/grad_umag
-             rz = umagz/grad_umag
-
-             he_rgn = dabs(rx*sh(1,1)+ry*sh(2,1)+rz*sh(3,1))
-     &              + dabs(rx*sh(1,2)+ry*sh(2,2)+rz*sh(3,2))
-     &              + dabs(rx*sh(1,3)+ry*sh(2,3)+rz*sh(3,3))
-     &              + dabs(rx*sh(1,4)+ry*sh(2,4)+rz*sh(3,4))
-     &              + dabs(rx*sh(1,5)+ry*sh(2,5)+rz*sh(3,5))
-     &              + dabs(rx*sh(1,6)+ry*sh(2,6)+rz*sh(3,6))
-     &              + dabs(rx*sh(1,7)+ry*sh(2,7)+rz*sh(3,7))
-     &              + dabs(rx*sh(1,8)+ry*sh(2,8)+rz*sh(3,8))
-             he_rgn = 2.0/he_rgn
-            else
-             he_rgn = he_min
-        end if
-
-          if (umag .gt. 1.0d-6) then
-            sx=un(2)/umag
-            sy=un(3)/umag
-            sz=un(4)/umag
-
-            he_ugn = dabs(sx*sh(1,1)+sy*sh(2,1)+sz*sh(3,1))
-     &             + dabs(sx*sh(1,2)+sy*sh(2,2)+sz*sh(3,2))
-     &             + dabs(sx*sh(1,3)+sy*sh(2,3)+sz*sh(3,3))
-     &             + dabs(sx*sh(1,4)+sy*sh(2,4)+sz*sh(3,4))
-     &             + dabs(sx*sh(1,5)+sy*sh(2,5)+sz*sh(3,5))
-     &             + dabs(sx*sh(1,6)+sy*sh(2,6)+sz*sh(3,6))
-     &             + dabs(sx*sh(1,7)+sy*sh(2,7)+sz*sh(3,7))
-     &             + dabs(sx*sh(1,8)+sy*sh(2,8)+sz*sh(3,8))
-
-            he_ugn = 2.0/he_ugn
-            else
-            he_ugn = he_min
-            end if
+!         if (grad_umag .gt. 1.0e-9) then
+!             rx = umagx/grad_umag
+!             ry = umagy/grad_umag
+!             rz = umagz/grad_umag
+!
+!             he_rgn = dabs(rx*sh(1,1)+ry*sh(2,1)+rz*sh(3,1))
+!     &              + dabs(rx*sh(1,2)+ry*sh(2,2)+rz*sh(3,2))
+!     &              + dabs(rx*sh(1,3)+ry*sh(2,3)+rz*sh(3,3))
+!     &              + dabs(rx*sh(1,4)+ry*sh(2,4)+rz*sh(3,4))
+!     &              + dabs(rx*sh(1,5)+ry*sh(2,5)+rz*sh(3,5))
+!     &              + dabs(rx*sh(1,6)+ry*sh(2,6)+rz*sh(3,6))
+!     &              + dabs(rx*sh(1,7)+ry*sh(2,7)+rz*sh(3,7))
+!     &              + dabs(rx*sh(1,8)+ry*sh(2,8)+rz*sh(3,8))
+!             he_rgn = 2.0/he_rgn
+!            else
+!             he_rgn = he_min
+!        end if
+!
+!          if (umag .gt. 1.0d-6) then
+!            sx=un(2)/umag
+!            sy=un(3)/umag
+!            sz=un(4)/umag
+!
+!            he_ugn = dabs(sx*sh(1,1)+sy*sh(2,1)+sz*sh(3,1))
+!     &             + dabs(sx*sh(1,2)+sy*sh(2,2)+sz*sh(3,2))
+!     &             + dabs(sx*sh(1,3)+sy*sh(2,3)+sz*sh(3,3))
+!     &             + dabs(sx*sh(1,4)+sy*sh(2,4)+sz*sh(3,4))
+!     &             + dabs(sx*sh(1,5)+sy*sh(2,5)+sz*sh(3,5))
+!     &             + dabs(sx*sh(1,6)+sy*sh(2,6)+sz*sh(3,6))
+!     &             + dabs(sx*sh(1,7)+sy*sh(2,7)+sz*sh(3,7))
+!     &             + dabs(sx*sh(1,8)+sy*sh(2,8)+sz*sh(3,8))
+!
+!            he_ugn = 2.0/he_ugn
+!            else
+!            he_ugn = he_min
+!            end if
 
            he_ugn = he_min
            he_rgn = he_min
@@ -1013,14 +1092,15 @@ c.......Exponential Law
 !1
 !	murali
                 if (dtintau) then
-                   tau1=1.0d0/dsqrt((2.0d0/dt)**2+(2.0d0*umagc/he_ugn)**2 
+                   tau1=1.0d0/dsqrt((2.0d0/dt)**2
+     $           + (2.0d0*umagc/he_ugn)**2 
      $           + (4.0d0*(dif/ro)/he_ugn/he_ugn)**2)
                 else
 !	murali
 !1           	   tau1 = 1.0d0/dsqrt((2.0d0*umagc/hel)**2      
 !1     $           + (12.0d0*(dif/ro)/hel/hel)**2)
-		   tau1 = 1.0d0/dsqrt((2.0d0*umagc/he_ugn)**2
-     $            + (12.0d0*dif/he_rgn/he_rgn)**2)	  
+                  tau1 = 1.0d0/dsqrt((2.0d0*umagc/he_ugn)**2
+     $            + (12.0d0*dif/he_rgn/he_rgn)**2)
 !	murali
 !                    tau1 = hel/(2.0d0*umagc)        !2nd term of tau1 (above) dropped
                 endif
@@ -1035,8 +1115,8 @@ c.......Exponential Law
                 tau(4) = tau2
                 tau(5) = tau2
 
-                do i=1,ndf 
-                    do j=1,ndf 
+                do j=1,ndf 
+                    do i=1,ndf 
 
 !.......Nevermind the indentation
         a1a1(i,j) = a1(i,1)*tau(1)*a1(1,j) + a1(i,2)*tau(2)*a1(2,j)
@@ -1089,61 +1169,125 @@ c.......Exponential Law
                 effsa = effs * alpha
                 effdt = eff0 / dt
 
-                do 640 na=1,nen
-                    s0 = sh(0,na)
-                    s1 = sh(1,na)
-                    s2 = sh(2,na)
-                    s3 = sh(3,na)
-                    do 640 i=1, ndf
-                        nai = (na-1)*ndf + i
-                        do 610 nb=1,nen
-                            b0 = sh(0,nb)
-                            b1 = sh(1,nb)
-                            b2 = sh(2,nb)
-                            b3 = sh(3,nb)
-                            do 610 j=1, ndf
-                                nbj = (nb-1)*ndf + j
-                  
-!...........Nevermind the indentation
-                                s(nai,nbj) = s(nai,nbj)
-     &   + (s0*ident(i,j)+s1*a1m(i,j)+s2*a2m(i,j)+s3*a3m(i,j))*b0*effdt	  !s3*a3m(i,j)
-     &   + (s0*(a1(i,j)*b1+a2(i,j)*b2+a3(i,j)*b3)                         !a3(i,j)*b3
-     &   +  s1*((k11(i,j)+a1a1(i,j))*b1
-     &         +(k12(i,j)+a1a2(i,j))*b2
-     &         +(k13(i,j)+a1a3(i,j))*b3)				  !(k13(i,j)+a1a3(i,j))*b3)
-     &   +  s2*((k21(i,j)+a2a1(i,j))*b1
-     &         +(k22(i,j)+a2a2(i,j))*b2
-     &         +(k23(i,j)+a2a3(i,j))*b3)				  !(k23(i,j)+a2a3(i,j))*b3)
-     &   +  s3*((k31(i,j)+a3a1(i,j))*b1					  !s3*((k31(i,j)+a3a1(i,j))*b1
-     &         +(k32(i,j)+a3a2(i,j))*b2					  !(k32(i,j)+a3a2(i,j))*b2
-     &         +(k33(i,j)+a3a3(i,j))*b3)) * effa			  !(k33(i,j)+a3a3(i,j))*b3)) * effa
-     &   +  ident(i,j)*(s1*b1+s2*b2+s3*b3)*effsa			  !(s3*b3)*effsa
+!                do 640 na=1,nen
+!                    s0 = sh(0,na)
+!                    s1 = sh(1,na)
+!                    s2 = sh(2,na)
+!                    s3 = sh(3,na)
+!                    do 640 i=1, ndf
+!                        nai = (na-1)*ndf + i
+!                        do 610 nb=1,nen
+!                            b0 = sh(0,nb)
+!                            b1 = sh(1,nb)
+!                            b2 = sh(2,nb)
+!                            b3 = sh(3,nb)
+!                            do 610 j=1, ndf
+!                                nbj = (nb-1)*ndf + j
+!                  
+!!...........Nevermind the indentation
+!                                s(nai,nbj) = s(nai,nbj)
+!     &   + (s0*ident(i,j)+s1*a1m(i,j)+s2*a2m(i,j)+s3*a3m(i,j))*b0*effdt   !s3*a3m(i,j)
+!     &   + (s0*(a1(i,j)*b1+a2(i,j)*b2+a3(i,j)*b3)                         !a3(i,j)*b3
+!     &   +  s1*((k11(i,j)+a1a1(i,j))*b1
+!     &         +(k12(i,j)+a1a2(i,j))*b2
+!     &         +(k13(i,j)+a1a3(i,j))*b3)                                  !(k13(i,j)+a1a3(i,j))*b3)
+!     &   +  s2*((k21(i,j)+a2a1(i,j))*b1
+!     &         +(k22(i,j)+a2a2(i,j))*b2
+!     &         +(k23(i,j)+a2a3(i,j))*b3)                                  !(k23(i,j)+a2a3(i,j))*b3)
+!     &   +  s3*((k31(i,j)+a3a1(i,j))*b1                                  !s3*((k31(i,j)+a3a1(i,j))*b1
+!     &         +(k32(i,j)+a3a2(i,j))*b2                                  !(k32(i,j)+a3a2(i,j))*b2
+!     &         +(k33(i,j)+a3a3(i,j))*b3)) * effa                         !(k33(i,j)+a3a3(i,j))*b3)) * effa
+!     &   +  ident(i,j)*(s1*b1+s2*b2+s3*b3)*effsa                         !(s3*b3)*effsa
+!
+!610                     continue                     
+!     
+!                            p(nai) = p(nai)
+!                ! first term
+!     &          -(s0*ident(i,j))*ut(j)*eff0
+!                ! second term
+!     &          -(s1*a1m(i,j) + s2*a2m(i,j) + s3*a3m(i,j))*ut(j)*eff0    !-s3*a3m(i,j))*ut(j)*eff0
+!                ! third term
+!     &          -(s0*(a1(i,j)*ux(j)+a2(i,j)*uy(j)+a3(i,j)*uz(j)))*eff0     !a3(i,j)*uz(j)*eff0
+!                ! fourth term
+!     &          -( s1*((k11(i,j)+a1a1(i,j))*ux(j)
+!     &                +(k12(i,j)+a1a2(i,j))*uy(j)
+!     &                +(k13(i,j)+a1a3(i,j))*uz(j))                         !-k13(i,j)+a1a3(i,j))*uz(j)*s1*eff0
+!     &            +s2*((k21(i,j)+a2a1(i,j))*ux(j)
+!     &                +(k22(i,j)+a2a2(i,j))*uy(j)
+!     &                +(k23(i,j)+a2a3(i,j))*uz(j))                         !-k23(i,j)+a2a3(i,j))*uz(j)*s2*eff0
+!     &            +s3*((k31(i,j)+a3a1(i,j))*ux(j)                          !-k31(i,j)+a3a1(i,j))*ux(j)*s3*eff0
+!     &                +(k32(i,j)+a3a2(i,j))*uy(j)                          !-k32(i,j)+a3a2(i,j))*uy(j)*s3*eff0
+!     &                +(k33(i,j)+a3a3(i,j))*uz(j)))     *eff0              !-k33(i,j)+a3a3(i,j))*uz(j)*s3*eff0
+!                ! where is the fifth term
+!                ! last term
+!     &          - ident(i,j)*(s1*ux(j)+s2*uy(j)+s3*uz(j))*effs             !-ident(i,j)*s3*uz(j)*effs
+!
+!640         continue
 
-610                     continue
-
-                        do 640 j=1,ndf
-                            p(nai) = p(nai)
+!Compute p(nee)
+            do na = 1,nen
+                s0 = sh(0,na)
+                s1 = sh(1,na)
+                s2 = sh(2,na)
+                s3 = sh(3,na)
+                do i = 1,ndf
+                    nai = (na-1)*ndf + i
+                    do j = 1,ndf
+                        p(nai) = p(nai)
                 ! first term
      &          -(s0*ident(i,j))*ut(j)*eff0
                 ! second term
-     &          -(s1*a1m(i,j) + s2*a2m(i,j) + s3*a3m(i,j))*ut(j)*eff0 	   !-s3*a3m(i,j))*ut(j)*eff0
+     &          -(s1*a1m(i,j) + s2*a2m(i,j) + s3*a3m(i,j))*ut(j)*eff0    !-s3*a3m(i,j))*ut(j)*eff0
                 ! third term
      &          -(s0*(a1(i,j)*ux(j)+a2(i,j)*uy(j)+a3(i,j)*uz(j)))*eff0     !a3(i,j)*uz(j)*eff0
                 ! fourth term
      &          -( s1*((k11(i,j)+a1a1(i,j))*ux(j)
      &                +(k12(i,j)+a1a2(i,j))*uy(j)
-     &                +(k13(i,j)+a1a3(i,j))*uz(j))			   !-k13(i,j)+a1a3(i,j))*uz(j)*s1*eff0
+     &                +(k13(i,j)+a1a3(i,j))*uz(j))                         !-k13(i,j)+a1a3(i,j))*uz(j)*s1*eff0
      &            +s2*((k21(i,j)+a2a1(i,j))*ux(j)
      &                +(k22(i,j)+a2a2(i,j))*uy(j)
-     &                +(k23(i,j)+a2a3(i,j))*uz(j))			   !-k23(i,j)+a2a3(i,j))*uz(j)*s2*eff0
+     &                +(k23(i,j)+a2a3(i,j))*uz(j))                         !-k23(i,j)+a2a3(i,j))*uz(j)*s2*eff0
      &            +s3*((k31(i,j)+a3a1(i,j))*ux(j)                          !-k31(i,j)+a3a1(i,j))*ux(j)*s3*eff0
-     &                +(k32(i,j)+a3a2(i,j))*uy(j)			   !-k32(i,j)+a3a2(i,j))*uy(j)*s3*eff0
-     &                +(k33(i,j)+a3a3(i,j))*uz(j)))     *eff0		   !-k33(i,j)+a3a3(i,j))*uz(j)*s3*eff0
+     &                +(k32(i,j)+a3a2(i,j))*uy(j)                          !-k32(i,j)+a3a2(i,j))*uy(j)*s3*eff0
+     &                +(k33(i,j)+a3a3(i,j))*uz(j)))     *eff0              !-k33(i,j)+a3a3(i,j))*uz(j)*s3*eff0
                 ! where is the fifth term
                 ! last term
      &          - ident(i,j)*(s1*ux(j)+s2*uy(j)+s3*uz(j))*effs             !-ident(i,j)*s3*uz(j)*effs
-
-640             continue
+                    enddo
+                enddo
+            enddo
+!Compute s(nee,nee)
+            do nb = 1,nen
+                b0 = sh(0,nb)
+                b1 = sh(1,nb)
+                b2 = sh(2,nb)
+                b3 = sh(3,nb)
+                do j = 1,ndf
+                    nbj = (nb-1)*ndf + j
+                    do na = 1,nen
+                        s0 = sh(0,na)
+                        s1 = sh(1,na)
+                        s2 = sh(2,na)
+                        s3 = sh(3,na)
+                        do i = 1,ndf
+                            nai = (na-1)*ndf + i
+                            s(nai,nbj) = s(nai,nbj)
+     &   + (s0*ident(i,j)+s1*a1m(i,j)+s2*a2m(i,j)+s3*a3m(i,j))*b0*effdt   !s3*a3m(i,j)
+     &   + (s0*(a1(i,j)*b1+a2(i,j)*b2+a3(i,j)*b3)                         !a3(i,j)*b3
+     &   +  s1*((k11(i,j)+a1a1(i,j))*b1
+     &         +(k12(i,j)+a1a2(i,j))*b2
+     &         +(k13(i,j)+a1a3(i,j))*b3)                                  !(k13(i,j)+a1a3(i,j))*b3)
+     &   +  s2*((k21(i,j)+a2a1(i,j))*b1
+     &         +(k22(i,j)+a2a2(i,j))*b2
+     &         +(k23(i,j)+a2a3(i,j))*b3)                                  !(k23(i,j)+a2a3(i,j))*b3)
+     &   +  s3*((k31(i,j)+a3a1(i,j))*b1                                  !s3*((k31(i,j)+a3a1(i,j))*b1
+     &         +(k32(i,j)+a3a2(i,j))*b2                                  !(k32(i,j)+a3a2(i,j))*b2
+     &         +(k33(i,j)+a3a3(i,j))*b3)) * effa                         !(k33(i,j)+a3a3(i,j))*b3)) * effa
+     &   +  ident(i,j)*(s1*b1+s2*b2+s3*b3)*effsa                         !(s3*b3)*effsa
+                        enddo
+                    enddo
+                enddo
+            enddo
 
 200         continue
             enddo       !quadrature loop ends
@@ -1157,18 +1301,27 @@ c.......Exponential Law
 !.......Condition on Pressure
                     if(irng.eq.1) then
                         do jnode=1,nnface
-                            inen=facemap(iface,jnode,elem_type)
+                            inen=facemapc(iface,jnode)
                             if(inen.ne.0) then
                                 idof=ndf
 !               print *,"Inside NonLinear Bnd Loop"
-                                inode=ien(inen,ie)        !modified on 8/7/2019
+!                                inode=ien(inen,ie)        !modified on 8/7/2019
+!                                nai=(inen-1)*ndf+idof
+!                                temp_down = prs_down*gamma/d1(1,inode)
+!                                p(nai)=-d1(idof,inode)
+!     $                          +cv*temp_down*d1(1,inode)
+!     $                          +0.5d0/d1(1,inode)
+!     $                          *(d1(2,inode)*d1(2,inode)
+!     $                          +d1(3,inode)*d1(3,inode)
+!     $                          +d1(4,inode)*d1(4,inode))
                                 nai=(inen-1)*ndf+idof
-                                temp_down = prs_down*gamma/d1(1,inode)
-                                p(nai)=-d1(idof,inode)
-     $                          +cv*temp_down*d1(1,inode)
-     $                          +0.5d0/d1(1,inode)*(d1(2,inode)*d1(2,inode)
-     $                          +d1(3,inode)*d1(3,inode)
-     $                          +d1(4,inode)*d1(4,inode))
+                                temp_down = prs_down*gamma/dl1(1,inen)
+                                p(nai)=-dl1(idof,inen)
+     $                          +cv*temp_down*dl1(1,inen)
+     $                          +0.5d0/dl1(1,inen)
+     $                          *(dl1(2,inen)*dl1(2,inen)
+     $                          +dl1(3,inen)*dl1(3,inen)
+     $                          +dl1(4,inen)*dl1(4,inen))
                                 do nb=1,nen
                                     do j =1,ndf
                                         nbj = (nb-1)*ndf + j
@@ -1184,14 +1337,23 @@ c.......Exponential Law
 !       murali
 !temp_surf+
 !       murali
+!                                s(nai,na1)= 
+!     $                          0.5d0/d1(1,inode)/d1(1,inode)*
+!     $                          (d1(2,inode)*d1(2,inode)+
+!     $                          d1(3,inode)*d1(3,inode)
+!     $                          +d1(4,inode)*d1(4,inode))
+!                                s(nai,na2)=-d1(2,inode)/d1(1,inode)
+!                                s(nai,na3)=-d1(3,inode)/d1(1,inode)
+!                                s(nai,na4)=-d1(4,inode)/d1(1,inode)
+!                                s(nai,na5)=1.0d0
                                 s(nai,na1)= 
-     $                          0.5d0/d1(1,inode)/d1(1,inode)*
-     $                          (d1(2,inode)*d1(2,inode)+
-     $                          d1(3,inode)*d1(3,inode)
-     $                          +d1(4,inode)*d1(4,inode))
-                                s(nai,na2)=-d1(2,inode)/d1(1,inode)
-                                s(nai,na3)=-d1(3,inode)/d1(1,inode)
-                                s(nai,na4)=-d1(4,inode)/d1(1,inode)
+     $                          0.5d0/dl1(1,inen)/dl1(1,inen)*
+     $                          (dl1(2,inen)*dl1(2,inen)+
+     $                          dl1(3,inen)*dl1(3,inen)
+     $                          +dl1(4,inen)*dl1(4,inen))
+                                s(nai,na2)=-dl1(2,inen)/dl1(1,inen)
+                                s(nai,na3)=-dl1(3,inen)/dl1(1,inen)
+                                s(nai,na4)=-dl1(4,inen)/dl1(1,inen)
                                 s(nai,na5)=1.0d0
                             endif
                         enddo
@@ -1216,7 +1378,7 @@ c.......Exponential Law
 !.......WallTemp = Read from input file
                     if(irng.eq.1) then
                         do jnode=1,nnface
-                            inode=facemap(iface,jnode,elem_type)
+                            inode=facemapc(iface,jnode)
                             if(inode.ne.0) then
                                 idof=ndf
                                 nai=(inen-1)*ndf+idof
@@ -1258,14 +1420,14 @@ c.......Exponential Law
 !.......Rotate the entire Element Level Matrix.
 !.......Implementing SLIP BND CONDITION START..........................
 !.......FIXME this is a little tricky
-            flag=.FALSE.
-            do iface=1,neface
-                irng=rng(iface,ie)
-                if(irng.eq.9) then
-                    flag=.true.
-                    exit
-                endif
-            enddo
+!            flag=.FALSE.
+!            do iface=1,neface
+!                irng=rng(iface,ie)
+!                if(irng.eq.9) then
+!                    flag=.true.
+!                    exit
+!                endif
+!            enddo
 
             flag=.FALSE.
 
@@ -1300,11 +1462,11 @@ c.......Exponential Law
                     enddo
                 enddo
             else
-                do ia=1,nee
-                    do ib=1,nee
+                do ib=1,nee
+                    do ia=1,nee
                         selm(ia,ib,ie) = s(ia,ib)
                     enddo
-                    p_rot(ia) = p(ia)
+                    p_rot(ib) = p(ib)
                 enddo
             end if
 !           write(100+my_pe,*)((selm(i,j,ie),i=1,nee),j=1,nee)
@@ -1329,38 +1491,43 @@ c.......Exponential Law
                 inode=ien(inen,ie)
                 do idof=1,ndf
                     ia=(inen-1)*ndf+idof
+!$OMP ATOMIC UPDATE
                     bp1(idof,inode) = bp1(idof,inode) + p_rot(ia)
-                    wg1(idof,inode) = wg1(idof,inode) + s(ia,ia)
+!wg1 is not used while using blk_diag preconditioner
+!uncomment this if required $OMP ATOMIC UPDATE
+!                    wg1(idof,inode) = wg1(idof,inode) + s(ia,ia)
                 enddo
             enddo
              
 !
 !...........section for data verification
-            icode = 0
+!            icode = 0
 
-            if(icode.eq.1) then
+!            if(icode.eq.1) then
 !                write(100+my_pe,*) ((selm(i,j,ie),i=1,nee),j=1,nee)
-                write(105+my_pe,*) (p_rot(i),i=1,nee)
-            else if(icode.eq.2) then
-                do inen=1,nen
-                    inode=ien(inen,ie)
+!                write(105+my_pe,*) (p_rot(i),i=1,nee)
+!            else if(icode.eq.2) then
+!                do inen=1,nen
+!                    inode=ien(inen,ie)
 !!                    write(100+my_pe,*) 
 !!     $                  ((block(i,j,inode),i=1,ndf),j=1,ndf)
-                    write(105+my_pe,*)
-     $                  (bp1(idof,inode),idof=1,ndf)
-                enddo
-            else if(icode.eq.3) then
-                if(ie.eq.nec) then
-                    do inode=1,nnl
+!                    write(105+my_pe,*)
+!     $                  (bp1(idof,inode),idof=1,ndf)
+!                enddo
+!            else if(icode.eq.3) then
+!                if(ie.eq.nec) then
+!                    do inode=1,nnl
 !!                        write(90+my_pe,*)
 !!     $                   ((block(i,j,inode),i=1,ndf),j=1,ndf)
-                        write(120+my_pe,*) (bp1(idof,inode),idof=1,ndf)
-                    enddo
-                endif
-            endif
+!                        write(120+my_pe,*) (bp1(idof,inode),idof=1,ndf)
+!                    enddo
+!                endif
+!            endif
 
 !.......ELEMENT LOOP ENDS...............................!
-        enddo   
+        enddo
+!$OMP END DO
+!$OMP END PARALLEL
 
         return
         endsubroutine

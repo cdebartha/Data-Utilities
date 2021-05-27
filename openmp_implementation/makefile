@@ -1,6 +1,6 @@
 SHELL=/bin/sh
 #COM=obliquex
-COM=AI_9bld5_2
+COM=AI_9bld5_omp
 
 
 OBJ =  main.o initialize.o parseinput.o echoinput.o diskout_sd.o \
@@ -22,14 +22,14 @@ LDR=$(FC)
 .SUFFIXES: .F
  
 .F.o:
-	$(FC) $(FFLAGS)  -c  $(?:.o=.F) 
+	$(FC) $(FFLAGS) -c -qopenmp $(?:.o=.F) 
 .c.o:
-	$(CC) $(CFLAGS)  -c $(?:.o=.c)
+	$(CC) $(CFLAGS) -c -qopenmp $(?:.o=.c)
 
 LFLAGS=-L ~/PARMEM -L ~/PARLIB -lfemC -lsvml
 
 $(COM): $(OBJ)
-	$(LDR) -o $(COM) $(OBJ)
+	$(LDR) -o $(COM) -qopenmp $(OBJ)
 
 install: $(COM)
 	mv $(COM) $(HOME)/bin/$(ARCH)/$(COM)
@@ -37,4 +37,4 @@ uni:
 	$(MAKE) COMMONLIB='$(COMMONLIBU)' FFLAGS='$(FFLAGSU)' CFLAGS='$(CFLAGSU)' CC='$(CCU)' FC='$(FCU)'
 
 clean:
-	rm -f $(OBJ) AI_*
+	rm -f $(OBJ) *.optrpt AI_*

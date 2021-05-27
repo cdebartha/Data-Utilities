@@ -1,13 +1,16 @@
         subroutine blkmvp_iter_sd(ien,x1,d1,do,dd1,bp1,
-     $          angle,rng)
+     $          angle,rng,d1_t,do_t,prs_down)
 
         implicit none
         include 'global.h'
+	include 'turbpara.h'
 
 !.......External variables.
         integer ien(nen,nec)
         integer rng(neface,nec)
         real*8  selm(nee,nee)
+	integer mgau2
+	parameter(mgau2=21)
 !        real*8  b(ndf,nnl)
         real*8  bp1(ndf,nnl)
         real*8  x1(nsd,nnl)
@@ -35,8 +38,8 @@
         real*8  k21(ndf,ndf), k22(ndf,ndf), k23(ndf,ndf)
         real*8  k31(ndf,ndf), k32(ndf,ndf), k33(ndf,ndf)
         real*8  sh(0:3,nen),xs(nsd,nsd),det
-        real*8  gaus(3,9)
-        real*8  weis(9)
+	real*8  gaus(nsd,mgau2)
+	real*8  weis(mgau2)
         real*8  s0,s1,s2,s3,b0,b1,b2,b3
         real*8  s(nee,nee),p(nee)
         real*8  rotate(nee,nee),p_rot(nee)
@@ -53,7 +56,7 @@
 !.......Temporary variables
         real*8  tmp,tmp1,tmp2,tmp3,tmp4,tmp5,tmp6,tmp7,tmp8
 !       murali
-        real*8  temp1,temp2,temp3,temp4,temp5,temp6,dis1,dis2,dis3
+        real*8  temp1,temp2,temp3,temp4,temp5,temp6,temp7,temp8,dis1,dis2,dis3
         real*8 he_max,he_min,he_ugn,he_rgn
         real*8 umag0,umagx,umagy,umagz,grad_umag
         real*8 rx,ry,rz,sx,sy,sz
@@ -74,12 +77,18 @@
         real*8  effs,eff0,effa,effsa,effdt
         real*8  dif,dif_mol
         real*8  gm,ro,et,xi
-        real*8  gas_const,cv,t,ts,xmu,dyn_eddy
+        real*8  gas_const,cv,t,ts,xmu
         real*8  xla,r,xkcv,prandtl,prandtl_turb
         real*8  xvv,umag,pres,c_sound,umagc
         real*8  h1,h2,hel
         real*8  tau(ndf),tau1,tau2,tau_delta,delt
         real*8  cos_a, sin_a, angle_a
+        real*8  coeff1, coeff2, coeff3, coeff4, coeff5
+
+	real*8 d1_t(ndf_t,nnl),do_t(ndf_t,nnl)
+	real*8 dl1_t(ndf_t,nen),dlo_t(ndf_t,nen)
+	real*8 nut_n,nut_np1,nut
+	real*8 ki,fv1,kin_eddy,dyn_eddy
 
 !.......defined for mv product 
         real*8  dd1(ndf,nnl),ddl1(ndf,nen)
@@ -97,13 +106,12 @@
         parameter(torr=0.0000000001d0)
 
 !.......Thermodynamic variables
-
         prandtl = 0.72d0
 
         dif = viscosity       ! free stream dynamic viscosity (mu)
-        dif_mol = dif
+!        dif_mol = dif
         gas_const=1.0/gamma
-        cv = gas_const/(gamma-1)
+        cv = gas_const/(gamma-1.0)
 
 !.......Define an identity matrix
         do idof =1,ndf
@@ -115,7 +123,7 @@
 
         call fclear(bp1,ndf*nnl)
 
-        call lgau3t(iquad,nquad3,gaus,weis)   !Quadrature Points
+!        call lgau3t(iquad,nquad3,gaus,weis)   !Quadrature Points
 
 !.......ELEMENT LOOP BEGINS.............................!
         do ie=1,nec
@@ -133,7 +141,14 @@
                     dlo(idof,inen)=do(idof,inode)
                     ddl1(idof,inen)=dd1(idof,inode)
                 enddo
-            enddo
+	       if(turbulent)then
+	      do idof =1,ndf_t
+	        dlo_t(idof,inen)=do_t(idof,inode)
+	        dl1_t(idof,inen)=d1_t(idof,inode)
+	      end do  
+	    endif
+
+           enddo
 
 
 !.......Initialize to zero for each element
@@ -149,7 +164,8 @@
 
 !...........QUADRATURE LOOP BEGINS.........................!
             do ig=1,nquad3
-                call sf36o(gaus(1,ig),xl1,det,sh,1,xs)
+!                call sf36o(gaus(1,ig),xl1,det,sh,1,xs)
+                 include "sf3d8n.h"
                 det=dabs(det)
 
 !...........Conservation variables at integration point
@@ -158,11 +174,14 @@
      &                  sh(0,1)*dl1(idof,1) + sh(0,2)*dl1(idof,2)
      &                + sh(0,3)*dl1(idof,3) + sh(0,4)*dl1(idof,4)
      &                + sh(0,5)*dl1(idof,5) + sh(0,6)*dl1(idof,6)
+     &                + sh(0,7)*dl1(idof,7) + sh(0,8)*dl1(idof,8)
+
 
                     un(idof)   = 
      &                  sh(0,1)*dlo(idof,1) + sh(0,2)*dlo(idof,2)
      &                + sh(0,3)*dlo(idof,3) + sh(0,4)*dlo(idof,4)
      &                + sh(0,5)*dlo(idof,5) + sh(0,6)*dlo(idof,6)
+     &                + sh(0,7)*dlo(idof,7) + sh(0,8)*dlo(idof,8)
 
                     uc(idof) = alpha * unp1(idof) + oma* un(idof)
 
@@ -170,32 +189,33 @@
      &                  sh(1,1)*dl1(idof,1) + sh(1,2)*dl1(idof,2)
      &                + sh(1,3)*dl1(idof,3) + sh(1,4)*dl1(idof,4)
      &                + sh(1,5)*dl1(idof,5) + sh(1,6)*dl1(idof,6)
+     &                + sh(1,7)*dl1(idof,7) + sh(1,8)*dl1(idof,8)
 
                     uynp1(idof) = 
      &                  sh(2,1)*dl1(idof,1) + sh(2,2)*dl1(idof,2)
      &                + sh(2,3)*dl1(idof,3) + sh(2,4)*dl1(idof,4)
      &                + sh(2,5)*dl1(idof,5) + sh(2,6)*dl1(idof,6)
-
+     &                + sh(2,7)*dl1(idof,7) + sh(2,8)*dl1(idof,8)
                     uznp1(idof) = 
      &                  sh(3,1)*dl1(idof,1) + sh(3,2)*dl1(idof,2)
      &                + sh(3,3)*dl1(idof,3) + sh(3,4)*dl1(idof,4)
      &                + sh(3,5)*dl1(idof,5) + sh(3,6)*dl1(idof,6)
-
+     &                + sh(3,7)*dl1(idof,7) + sh(3,8)*dl1(idof,8)
                     uxn(idof)   = 
      &                  sh(1,1)*dlo(idof,1) + sh(1,2)*dlo(idof,2)
      &                + sh(1,3)*dlo(idof,3) + sh(1,4)*dlo(idof,4)
      &                + sh(1,5)*dlo(idof,5) + sh(1,6)*dlo(idof,6)
-
+     &                + sh(1,7)*dlo(idof,7) + sh(1,8)*dlo(idof,8)
                     uyn(idof)   = 
      &                  sh(2,1)*dlo(idof,1) + sh(2,2)*dlo(idof,2)
      &                + sh(2,3)*dlo(idof,3) + sh(2,4)*dlo(idof,4)
      &                + sh(2,5)*dlo(idof,5) + sh(2,6)*dlo(idof,6)
-
+     &                + sh(2,7)*dlo(idof,7) + sh(2,8)*dlo(idof,8)
                     uzn(idof)   = 
      &                  sh(3,1)*dlo(idof,1) + sh(3,2)*dlo(idof,2)
      &                + sh(3,3)*dlo(idof,3) + sh(3,4)*dlo(idof,4)
      &                + sh(3,5)*dlo(idof,5) + sh(3,6)*dlo(idof,6)
-
+     &                + sh(3,7)*dlo(idof,7) + sh(3,8)*dlo(idof,8)
                     ux(idof) = alpha*uxnp1(idof) + oma*uxn(idof)
                     uy(idof) = alpha*uynp1(idof) + oma*uyn(idof)
                     uz(idof) = alpha*uznp1(idof) + oma*uzn(idof)
@@ -204,14 +224,26 @@
                     else
                         ut(idof)= (unp1(idof)-un(idof))/dt
                     endif
+	           if(turbulent)then
+	    nut_np1= sh(0,1)* dl1_t(1,1) + sh(0,2)* dl1_t(1,2)
+     &             + sh(0,3)* dl1_t(1,3) + sh(0,4)* dl1_t(1,4)
+     &             + sh(0,5)* dl1_t(1,5) + sh(0,6)* dl1_t(1,6)
+     &             + sh(0,7)* dl1_t(1,7) + sh(0,8)* dl1_t(1,8)
 
+	    nut_n  = sh(0,1)* dlo_t(1,1) + sh(0,2)* dlo_t(1,2)
+     &             + sh(0,3)* dlo_t(1,3) + sh(0,4)* dlo_t(1,4)
+     &             + sh(0,5)* dlo_t(1,5) + sh(0,6)* dlo_t(1,6)
+     &             + sh(0,7)* dlo_t(1,7) + sh(0,8)* dlo_t(1,8)
+
+	    nut    = alpha * nut_np1 + oma * nut_n 
+		end if
 !...................Calculating the du terms
 
                     dunp1(idof) = 
      &                  sh(0,1)*ddl1(idof,1) + sh(0,2)*ddl1(idof,2)
      &                + sh(0,3)*ddl1(idof,3) + sh(0,4)*ddl1(idof,4)
      &                + sh(0,5)*ddl1(idof,5) + sh(0,6)*ddl1(idof,6)
-
+     &                + sh(0,7)*ddl1(idof,7) + sh(0,8)*ddl1(idof,8)
 !!                    un(idof)   = 
 !!     &                  sh(0,1)*dlo(idof,1) + sh(0,2)*dlo(idof,2)
 !!     &                + sh(0,3)*dlo(idof,3) + sh(0,4)*dlo(idof,4)
@@ -223,17 +255,18 @@
      &                  sh(1,1)*ddl1(idof,1) + sh(1,2)*ddl1(idof,2)
      &                + sh(1,3)*ddl1(idof,3) + sh(1,4)*ddl1(idof,4)
      &                + sh(1,5)*ddl1(idof,5) + sh(1,6)*ddl1(idof,6)
-
+     &                + sh(1,7)*ddl1(idof,7) + sh(1,8)*ddl1(idof,8)
                     duynp1(idof) = 
      &                  sh(2,1)*ddl1(idof,1) + sh(2,2)*ddl1(idof,2)
      &                + sh(2,3)*ddl1(idof,3) + sh(2,4)*ddl1(idof,4)
      &                + sh(2,5)*ddl1(idof,5) + sh(2,6)*ddl1(idof,6)
+     &                + sh(2,7)*ddl1(idof,7) + sh(2,8)*ddl1(idof,8)
 
                     duznp1(idof) =
      &                  sh(3,1)*ddl1(idof,1) + sh(3,2)*ddl1(idof,2)
      &                + sh(3,3)*ddl1(idof,3) + sh(3,4)*ddl1(idof,4)
      &                + sh(3,5)*ddl1(idof,5) + sh(3,6)*ddl1(idof,6)
-
+     &                + sh(3,7)*ddl1(idof,7) + sh(3,8)*ddl1(idof,8)
 !!                    uxn(idof)   = 
 !!     &                  sh(1,1)*dlo(idof,1) + sh(1,2)*dlo(idof,2)
 !!     &                + sh(1,3)*dlo(idof,3) + sh(1,4)*dlo(idof,4)
@@ -503,39 +536,38 @@
      +                    a0i(5,3)*res(3) + a0i(5,4)*res(4) +
      +                    a0i(5,5)*res(5)                    )
 
-                    dv(1,1) = 
-     &                  xs(1,1)*ux(1) + xs(1,2)*uy(1) + xs(1,3)*uz(1)
-                    dv(1,2) = 
-     &                  xs(1,1)*ux(2) + xs(1,2)*uy(2) + xs(1,3)*uz(2)
-                    dv(1,3) = 
-     &                  xs(1,1)*ux(3) + xs(1,2)*uy(3) + xs(1,3)*uz(3)
-                    dv(1,4) = 
-     &                  xs(1,1)*ux(4) + xs(1,2)*uy(4) + xs(1,3)*uz(4)
-                    dv(1,5) = 
-     &                  xs(1,1)*ux(5) + xs(1,2)*uy(5) + xs(1,3)*uz(5)
+                    dv(1,1) =
+     &                  cf11*ux(1) + cf12*uy(1) + cf13*uz(1)
+                    dv(1,2) =
+     &                  cf11*ux(2) + cf12*uy(2) + cf13*uz(2)
+                    dv(1,3) =
+     &                  cf11*ux(3) + cf12*uy(3) + cf13*uz(3)
+                    dv(1,4) =
+     &                  cf11*ux(4) + cf12*uy(4) + cf13*uz(4)
+                    dv(1,5) =
+     &                  cf11*ux(5) + cf12*uy(5) + cf13*uz(5)
 
-                    dv(2,1) = 
-     &                  xs(2,1)*ux(1) + xs(2,2)*uy(1) + xs(2,3)*uz(1)
-                    dv(2,2) = 
-     &                  xs(2,1)*ux(2) + xs(2,2)*uy(2) + xs(2,3)*uz(2)
-                    dv(2,3) = 
-     &                  xs(2,1)*ux(3) + xs(2,2)*uy(3) + xs(2,3)*uz(3)
-                    dv(2,4) = 
-     &                  xs(2,1)*ux(4) + xs(2,2)*uy(4) + xs(2,3)*uz(4)
-                    dv(2,5) = 
-     &                  xs(2,1)*ux(5) + xs(2,2)*uy(5) + xs(2,3)*uz(5)
+                    dv(2,1) =
+     &                  cf21*ux(1) + cf22*uy(1) + cf23*uz(1)
+                    dv(2,2) =
+     &                  cf21*ux(2) + cf22*uy(2) + cf23*uz(2)
+                    dv(2,3) =
+     &                  cf21*ux(3) + cf22*uy(3) + cf23*uz(3)
+                    dv(2,4) =
+     &                  cf21*ux(4) + cf22*uy(4) + cf23*uz(4)
+                    dv(2,5) =
+     &                  cf21*ux(5) + cf22*uy(5) + cf23*uz(5)
 
-                    dv(3,1) = 
-     &                  xs(3,1)*ux(1) + xs(3,2)*uy(1) + xs(3,3)*uz(1)
-                    dv(3,2) = 
-     &                  xs(3,1)*ux(2) + xs(3,2)*uy(2) + xs(3,3)*uz(2)
-                    dv(3,3) = 
-     &                  xs(3,1)*ux(3) + xs(3,2)*uy(3) + xs(3,3)*uz(3)
-                    dv(3,4) = 
-     &                  xs(3,1)*ux(4) + xs(3,2)*uy(4) + xs(3,3)*uz(4)
-                    dv(3,5) = 
-     &                  xs(3,1)*ux(5) + xs(3,2)*uy(5) + xs(3,3)*uz(5)
-
+                    dv(3,1) =
+     &                  cf31*ux(1) + cf32*uy(1) + cf33*uz(1)
+                    dv(3,2) =
+     &                  cf31*ux(2) + cf32*uy(2) + cf33*uz(2)
+                    dv(3,3) =
+     &                  cf31*ux(3) + cf32*uy(3) + cf33*uz(3)
+                    dv(3,4) =
+     &                  cf31*ux(4) + cf32*uy(4) + cf33*uz(4)
+                    dv(3,5) =
+     &                  cf31*ux(5) + cf32*uy(5) + cf33*uz(5)
 
                     rden = torr + 
      +                  dv(1,1) * (a0i(1,1)*dv(1,1) + a0i(1,2)*dv(1,2)
@@ -592,10 +624,9 @@
                     delt = 0.0d0
                 end if
 
-                eff0 = weis(ig) * det
+                eff0 =  wq3(ig) * det
                 effs = eff0 * delt
 
-                dif = dif_mol
 
                 gm = gamma
                 ro = uc(1)
@@ -610,20 +641,27 @@
                 ts = 110.0d0   !CONSTANT in SUTHERLAND's LAW of VISCOSITY
 
 !.......viscosity constant (independent of temp)
-                xmu= dif
+!                xmu= dif
 !.......SutherLands Law.
 !.......Ref Temp: 288.16 K (equal to freestream temp)
 !.......Formulae: mu/mu_ref=((T/ref_temp)^3/2)*((ref_temp+110)/(T+110))
 !.......Afer Non-Dimensionaling above, we get:
 !.......dividing the num and denom. by T_ref
-                if(Sutherland_Law)then
+!                if(Sutherland_Law)then
                     ts=ts/288.16d0
                     xmu= dif * ((t)**1.5d0)*((1.0d0+ts)/(t+ts))
-                endif
+!                endif
 c.......Exponential Law
 !         xmu= dif*(t**0.768)
 
                 dyn_eddy=0.0d0
+
+	        if(turbulent)then
+	    	ki = nut/(xmu/ro)
+	    	fv1= (ki**3)/(ki**3+cv1**3)
+	   	kin_eddy = nut*fv1
+	    	dyn_eddy = kin_eddy*ro
+	  	endif
 
                 xla =-2.0d0/3.0d0*(xmu + dyn_eddy)  
                 r   = 1.0d0/ro
@@ -874,11 +912,10 @@ c.......Exponential Law
 
 !.......hel = Element Length (min side len / max side len / in the dir of vel)
 !.......USE ONE OF THE OPTIONS
-
 !       murali
                 temp1=sqrt(dl1(1,1)*dl1(1,1)+dl1(2,1)*dl1(2,1)
      $                    +dl1(3,1)*dl1(3,1))
-                temp2=sqrt(dl1(1,2)*dl1(1,2)+d1(2,2)*dl1(2,2)
+                temp2=sqrt(dl1(1,2)*dl1(1,2)+dl1(2,2)*dl1(2,2)
      $                    +dl1(3,2)*dl1(3,2))
                 temp3=sqrt(dl1(1,3)*dl1(1,3)+dl1(2,3)*dl1(2,3)
      $                    +dl1(3,3)*dl1(3,3))
@@ -888,20 +925,28 @@ c.......Exponential Law
      $                    +dl1(3,5)*dl1(3,5))
                 temp6=sqrt(dl1(1,6)*dl1(1,6)+dl1(2,6)*dl1(2,6)
      $                    +dl1(3,6)*dl1(3,6))
+                temp7=sqrt(dl1(1,7)*dl1(1,7)+dl1(2,7)*dl1(2,7)
+     $                    +dl1(3,7)*dl1(3,7))
+                temp8=sqrt(dl1(1,8)*dl1(1,8)+dl1(2,8)*dl1(2,8)
+     $                    +dl1(3,8)*dl1(3,8))
+
 
                 umag0=sh(0,1)*temp1+sh(0,2)*temp2+sh(0,3)*temp3
      $                     +sh(0,4)*temp4
      $                     +sh(0,5)*temp5+sh(0,6)*temp6
+     $                     +sh(0,7)*temp7+sh(0,8)*temp8
                 umagx=sh(1,1)*temp1+sh(1,2)*temp2+sh(1,3)*temp3
      $                     +sh(1,4)*temp4
      $                     +sh(1,5)*temp5+sh(1,6)*temp6
+     $                     +sh(1,7)*temp7+sh(1,8)*temp8
                 umagy=sh(2,1)*temp1+sh(2,2)*temp2+sh(2,3)*temp3
      $                     +sh(2,4)*temp4
      $                     +sh(2,5)*temp5+sh(2,6)*temp6
+     $                     +sh(2,7)*temp7+sh(2,8)*temp8
                 umagz=sh(3,1)*temp1+sh(3,2)*temp2+sh(3,3)*temp3
      $                     +sh(3,4)*temp4
      $                     +sh(3,5)*temp5+sh(3,6)*temp6
-
+     $                     +sh(3,7)*temp7+sh(3,8)*temp8
                 grad_umag=dsqrt(umagx*umagx+umagy*umagy+umagz*umagz)
                 temp1=xl1(1,1)-xl1(1,2)
                 temp2=xl1(2,1)-xl1(2,2)
@@ -931,7 +976,8 @@ c.......Exponential Law
      &              + dabs(rx*sh(1,4)+ry*sh(2,4)+rz*sh(3,4))
      &              + dabs(rx*sh(1,5)+ry*sh(2,5)+rz*sh(3,5))
      &              + dabs(rx*sh(1,6)+ry*sh(2,6)+rz*sh(3,6))
-
+     &              + dabs(rx*sh(1,7)+ry*sh(2,7)+rz*sh(3,7))
+     &              + dabs(rx*sh(1,8)+ry*sh(2,8)+rz*sh(3,8))
              he_rgn = 2.0/he_rgn
             else
              he_rgn = he_min
@@ -947,7 +993,8 @@ c.......Exponential Law
      &             + dabs(sx*sh(1,4)+sy*sh(2,4)+sz*sh(3,4))
      &             + dabs(sx*sh(1,5)+sy*sh(2,5)+sz*sh(3,5))
      &             + dabs(sx*sh(1,6)+sy*sh(2,6)+sz*sh(3,6))
-
+     &             + dabs(sx*sh(1,7)+sy*sh(2,7)+sz*sh(3,7))
+     &             + dabs(sx*sh(1,8)+sy*sh(2,8)+sz*sh(3,8))
             he_ugn = 2.0/he_ugn
             else
             he_ugn = he_min
@@ -995,8 +1042,8 @@ c.......Exponential Law
 !1                endif
 
                 if (dtintau) then
-                    tau1=1.0d0/dsqrt((2.0d0/dt)**2+(2.0d0*umagc/hel)**2 
-     $           + (4.0d0*(dif/ro)/hel/hel)**2)
+                   tau1=1.0d0/dsqrt((2.0d0/dt)**2+(2.0d0*umagc/he_ugn)**2 
+     $           + (4.0d0*(dif/ro)/he_ugn/he_ugn)**2)
                 else
 !       murali
 !1                 tau1 = 1.0d0/dsqrt((2.0d0*umagc/hel)**2
@@ -1008,8 +1055,7 @@ c.......Exponential Law
                 endif
 
                 tau_delta = delt/umagc/umagc
-
-!         	tau_delta = 0.0d0                !Change Suggested for Finer MESH
+!       	tau_delta = 0.0d0                !Change Suggested for Finer MESH
                 tau2 = max(0.0e0, tau1-tau_delta)
 
                 tau(1) = tau2
@@ -1130,12 +1176,124 @@ c.......Exponential Law
             enddo       !quadrature loop ends
 
 
+!.......Implementing NonLinear BND condition...........................
+                 if(ApplyBackPressure)then
+                do iface=1,neface
+                    irng=rng(iface,ie)
+!.......Check if it is downstream boundary
+!.......Condition on Pressure
+                    if(irng.eq.1) then
+                        do jnode=1,nnface
+                            inen=facemap(iface,jnode,elem_type)
+                            if(inen.ne.0) then
+                                idof=ndf
+!               print *,"Inside NonLinear Bnd Loop"
+                                inode=ien(inen,ie)              !modified on 8/7/2019
+                                nai=(inen-1)*ndf+idof
+!                                temp_down=prs_down*gamma/d1(1,inode)
+!                                p(nai)=-d1(idof,inode)
+!     $                          +cv*temp_down*d1(1,inode)
+!     $                          +0.5d0/d1(1,inode)*(d1(2,inode)*d1(2,inode)
+!     $                          +d1(3,inode)*d1(3,inode)
+!     $                          +d1(4,inode)*d1(4,inode))
+                                coeff1 = 0.5d0/d1(1,inode)/d1(1,inode)*
+     $                          (d1(2,inode)*d1(2,inode)+
+     $                          d1(3,inode)*d1(3,inode)
+     $                          +d1(4,inode)*d1(4,inode)) 
+                                coeff2 = -d1(2,inode)/d1(1,inode)
+                                coeff3 = -d1(3,inode)/d1(1,inode)
+                                coeff4 = -d1(4,inode)/d1(1,inode)
+                                coeff5 = 1.0d0
+                                p(nai) = coeff1*dd1(1,inode)
+     $                                 + coeff2*dd1(2,inode)
+     $                                 + coeff3*dd1(3,inode)
+     $                                 + coeff4*dd1(4,inode)
+     $                                 + coeff5*dd1(5,inode)
+                            endif
+                        enddo
+                    end if
+                end do
+            endif
+
+
+!.......Non-Linear BND Condition Implementation END....................
+
+
+!.......Implementing NonLinear BND condition for Wall Temperature
+!.......IF AdiabaticWall=.FALSE. then Wall Temp is specified.
+            if(.not.AdiabaticWall)then
+                do iface=1,neface
+                    irng=rng(iface,ie)
+                    write(19,*) 'ie,iface,irng',ie,iface,irng
+!.......check if it is Wall (Bnd 6-18)
+!.......Condition on Wall Temperature Implemented
+!.......WallTemp = Read from input file
+                    if(irng.eq.1) then
+                        do jnode=1,nnface
+                            inode=facemap(iface,jnode,elem_type)
+                            if(inode.ne.0) then
+                                idof=ndf
+                                nai=(inen-1)*ndf+idof
+!.......Wall Temp is Specified .....use it directly for replacing equations
+                                p(nai)=-d1(idof,inode)+
+     $                              cv*WallTemp*d1(1,inode)
+     $                        +0.5d0/d1(1,inode)*(d1(2,inode)*d1(2,inode)
+     $                        +d1(3,inode)*d1(3,inode)
+     $                        +d1(4,inode)*d1(4,inode))
+                            end if 
+                        end do
+                    endif
+                enddo
+            endif
+!.......Non-Linear BND Condition for Wall Temperature Implementation END
+
+!.......Rotating the flow LOCALLY to implement SLIP BND CONDITION.
+!.......REFER: Thesis by Aliabadi or LE BEAU
+!.......Rotate the entire Element Level Matrix.
+!.......Implementing SLIP BND CONDITION START..........................
+!.......FIXME this is a little tricky
+            flag=.FALSE.
+            do iface=1,neface
+                irng=rng(iface,ie)
+                if(irng.eq.9) then
+                    flag=.true.
+                    exit
+                endif
+            enddo
+
+!!            flag=.FALSE.
+
+            if(flag)then
+                do ia=1,nen
+                    angle_a = 0.0 !angle(ien(ia,ie))
+!!                    write(125,*) ien(ia,ie),angle_a
+                    cos_a = cos(angle_a)
+                    sin_a = sin(angle_a)
+                    ia1 = (ia-1)*ndf+1
+                    ia2 = ia1+1
+                    ia3 = ia2+1
+                    ia4 = ia3+1
+                    ia5 = ia4+1
+                    rotate(ia1,ia1) = 1.0d0
+                    rotate(ia2,ia2) = cos_a
+                    rotate(ia2,ia3) =-sin_a
+                    rotate(ia3,ia2) = sin_a
+                    rotate(ia3,ia3) = cos_a
+                    rotate(ia4,ia4) = 1.0d0
+                    rotate(ia5,ia5) = 1.0d0
+                end do
+                do ia=1,nee
+                    do ip=1,nee
+                        p_rot(ia) = p_rot(ia) + rotate(ip,ia)*p(ip)
+                    enddo
+                enddo
+            else
                 do ia=1,nee
                     p_rot(ia) = p(ia)
                 enddo
+            end if
 
 !...........assemble the arrays.
-
 !.............diagonal assembly
             do inen=1,nen
                 inode=ien(inen,ie)

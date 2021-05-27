@@ -3,6 +3,7 @@
 !       stabilized semi-discrete formaulation (f90)
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
         subroutine hypo
+        USE OMP_LIB
 
         implicit none
 
@@ -25,6 +26,7 @@
         real*8  dn1_sum(ndf,nnc),dn1_pro(6,nnc),eddy_vis(1,nnc)
         real*8  d1_sum(ndf,nnl),d1_pro(6,nnl),eddy_vis1(1,nnl),zlen
         real*8  ang(nnc),slipang(nnc)
+        real*8  t0, t1, t2, t3, t4, t5
         
         real*8 vloc1(ndf,nnl), wg1(nqc)
         real*8 vloc2(ndf,nnl), wg2(nqc)
@@ -683,6 +685,7 @@
 !         nt = nt+dt                                                    !    NTS
 !!!            tt = tt + dt                                                !    NTS
             tt = t_start + its*dt
+            t0 = OMP_GET_WTIME()
 !!!            if (mod(its,nsbref).eq.0) irefo = 1
             if (my_pe.eq.0) write(lookunit,2010) its                    !    NTS
                                                                         !    NTS
@@ -748,7 +751,7 @@
 ! added
 !		call genf(ien,fn,rng,ang)
 !		call setd(dn1,fn,idn)
-! added
+! added         
                 call rotation(dn1,dn1_glob,slipang)
                 call rotation(dno,dno_glob,slipang)
                 call gather(d1_glob,dn1_glob,ndf)
@@ -766,11 +769,17 @@
 !1                else
                     zlen = 0.2	!not used anywhere
                     call fclear(p1,ndf*nnl)
+!                    write(6, *) "Just before blk_iter_sd"
 !                    call tempdummmy(p1)
+                    t1 = OMP_GET_WTIME()
+                    t1 = t1 - t0
                     call blk_iter_sd(ien,x1,d1_glob,do_glob,
      $                      p1,ang,rng,vloc1,d1_t,do_t,lselm,p_down)
+                    t2 = OMP_GET_WTIME()
+                    t2 = t2 - t0
 !!                    call blkrhs_smag(ien,x1,d1,do,p1,vloc1,d1_t,do_t,
 !!     $                  zlen,eddy_vis1)           !FLUID!NIT NTS
+!                    write(6, *) "Just after blk_iter_sd"
 !1                end if
 ***************************************************************
 !...NEUMANN CONDITION                                                          !FLUID!NIT NTS
@@ -817,9 +826,12 @@
 !               endif
 !
                 if(nodalres.and.mod(its,nsrest).eq.0)call resout(bg2)  !FLUID!NIT NTS
-
+                    t3 = OMP_GET_WTIME()
+                    t3 = t3 - t0
                     call fgmres_smag(bg1,x1,d1,p1,do,dn1,ien,idn,rng,
      $              wg1,d1_t, do_t,zlen,ang,block1,p_down)     !FLUID!NIT NTS
+                    t4 = OMP_GET_WTIME()
+                    t4 = t4 - t0
 
 !                write(70+my_pe,602)((bg1(i,j),i=1,2),j=1,nnl)
 !       write(60+my_pe,602)((do(i,j),i=1,4),j=1,nnl)
@@ -1029,7 +1041,11 @@ C...FIND TOTAL NUMBER OF EQUATIONS ON FIRST PROCESSOR AND BROADCAST TO REST
 		call diskout_turb_sd(dn_t)
 		end if
             end if
-
+            t5 = OMP_GET_WTIME()
+            t5 = t5 - t0
+            if (my_pe.eq.0) then
+              write(7,5555) tt, t1, t2, t3, t4, t5
+            endif
         enddo                                                           !    NTS
 !...TIMESTEP LOOP (END) .............................................................!....NTS
         
@@ -1103,5 +1119,5 @@ C...FIND TOTAL NUMBER OF EQUATIONS ON FIRST PROCESSOR AND BROADCAST TO REST
      &      //"TOTAL.................................... = ",f12.2)
 6000    format (/,'TIME : ',e9.4,2X,'P_down :',e11.4)
 6001    format (/,1x,'TIME : ',e9.4,3x,"NO BACK_PRESSURE")
-
+5555    format (f6.3,4x,f6.3,4x,f6.3,4x,f6.3,4x,f6.3,4x,f6.3)
         end

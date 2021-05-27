@@ -12,6 +12,7 @@ C                 -FEMLIB:  Library of f90 subroutines
 C                 -PARLIB:  Library of c subroutines
 CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC   
         program main
+        USE OMP_LIB
         implicit none
         include "global.h"
         real*8 rc

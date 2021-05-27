@@ -1,5 +1,6 @@
         subroutine fgmres_smag(bg1,x1,d1,avloc1,do,dg1,ien,id,rng,wg1,
      &                            d1_t,do_t,zlen,ang,block,pres_down)
+        USE OMP_LIB
         implicit none
         include "global.h"
         include "fmalloc.h"
@@ -69,16 +70,21 @@ C...COMPUTE RESIDUAL r = W**(-1/2) * (b - A * d)
 !222             format(e16.9)
 
         call fclear(dummy,nqc) 
-        call sc1blk(bg1,dummy,block,id,nnc,nqc)
-        
+        call sc1blk(bg1,dummy,block,id,nnc,nqc)        
         call equal(dummy,bg1,nqc)
 !                do inode=155,155
 !                 do idf=1,ndf
 !                   write(300,222)bg1(idf+(inode-1)*ndf)
 !                 enddo
 !                enddo
-        
+!!$OMP PARALLEL DO
+!        do iqc = 1,nqc
+!            v1(iqc,1) = bg1(iqc)
+!            bg1(iqc) = 0.0
+!        end do
+!!$OMP END PARALLEL DO
 
+!        call sc1blk_self(v1(1,1),block,id,nnc,nqc)
 !        do iqc = 1,nqc
 !                bg1(iqc) = bg1(iqc)*wg1(iqc)
 !        enddo
@@ -107,9 +113,11 @@ C...CONVERGENCE CHECK
                 if (rnorm.le.eps(2).or.igmres.gt.outer) goto 700
 
 C...FIRST KRYLOV VECTOR
+!$OMP PARALLEL DO
                 do iqc = 1,nqc
                         v1(iqc,1) = v1(iqc,1)/rnorm
                 enddo
+!$OMP END PARALLEL DO
 
 C...ARNOLDI PROCESS
                 do j=1,inner
@@ -121,15 +129,17 @@ C...RIGHT SCALING
 !                            dummy(iqc)= v1(iqc,j)
 !                        enddo
 !                            call sc1blk(dummy,zg1,block,id,nnc,nqc)
-                      
-                        do iqc = 1,nqc
+!!$OMP PARALLEL DO SCHEDULE(DYNAMIC,64)
+!                        do iqc = 1,nqc
 !                                zg1(iqc) = zg1(iqc)*wg1(iqc)
-                               zg1(iqc) = v1(iqc,j)
-                        enddo
+!                               zg1(iqc) = v1(iqc,j)
+!                        enddo
+!!$OMP END PARALLEL DO
 C...MATVEC PRODUCT 
                         if (debug) call error("fgmres:gather",-999,.false.)
                         call tstamp(time,8)
-                        call gather (vloc1, zg1, ndf)
+!                        call gather (vloc1, zg1, ndf)
+                        call gather (vloc1, v1(1,j), ndf)
                         call tstamp(time,4)
                         call blkmvp_iter_sd(ien,x1,d1,do,vloc1,
      $                      avloc1,ang,rng,d1_t,do_t,pres_down)
@@ -141,15 +151,20 @@ C...MATVEC PRODUCT
                         call tstamp(time,5)
 C...LEFT SCALING
                         call fclear(dummy1,nqc)
-                        call fclear(dummy3,nqc)
-                        do iqc = 1,nqc
-                           dummy3(iqc)=v1(iqc,j1)
-                        enddo
+!                        call fclear(dummy3,nqc)
+!$OMP PARALLEL DO
+                       do iqc = 1,nqc
+                          dummy3(iqc)=v1(iqc,j1)
+                       enddo
+!$OMP END PARALLEL DO
                         call sc1blk(dummy3,dummy1,block,id,nnc,nqc)
+!$OMP PARALLEL DO
                         do iqc = 1,nqc
                            v1(iqc,j1) = dummy1(iqc)
                         enddo
-
+!$OMP END PARALLEL DO
+!                        call fclear(v1(1,j1),nqc)
+!                        call sc1blk_self(v1(1,j1),block,id,nnc,nqc)
 !                        do iqc = 1,nqc
 !!                                write(88,*) v1(iqc,j1),j1
 !!                                write(90,*) wg1(iqc),j1
@@ -161,13 +176,13 @@ C...LEFT SCALING
 
 C...GRAM_SCHMIDT PROCESS
                         do i=1,j
-                                call tstamp(time,8)
-                                call getnorm(v1(1,j1),v1(1,i),tmp1,nqc)
-                                tmpo = tmp1 
-                                call tstamp(time,7)
-                                h(i,j) = tmpo
-                                tmpo = -tmpo
-                                call saxpy(nqc, tmpo, v1(1,i), 1, v1(1,j1), 1)
+                          call tstamp(time,8)
+                          call getnorm(v1(1,j1),v1(1,i),tmp1,nqc)
+                          tmpo = tmp1 
+                          call tstamp(time,7)
+                          h(i,j) = tmpo
+                          tmpo = -tmpo
+                          call saxpy(nqc, tmpo, v1(1,i), 1, v1(1,j1), 1)
                         enddo
 
                         call tstamp(time,8)
@@ -179,9 +194,11 @@ C...GRAM_SCHMIDT PROCESS
                         tmpo = sqrt(tmpo)
                         h(j1,j) = tmpo
                         tmpo = 1.0/tmpo
+!$OMP PARALLEL DO
                         do iqc = 1,nqc
                                 v1(iqc,j1) = v1(iqc,j1) *tmpo
                         enddo
+!$OMP END PARALLEL DO
                 enddo                   
 
 C...SOLVE HESSENBERG SYSTEM ON ALL PROCESSORS   H_m * y = beta * e_1
@@ -195,10 +212,10 @@ C...GIVENS ROTATIONS
                         j1 = j + 1
 c                       previously computed rotations on column j
                         do i=2,j
-                                i1 = i - 1
-                                hsave = h(i1,j)
-                                h(i1,j) = + cc(i1) * hsave + ss(i1) * h(i,j)
-                                h(i ,j) = - ss(i1) * hsave + cc(i1) * h(i,j)
+                            i1 = i - 1
+                            hsave = h(i1,j)
+                            h(i1,j) = + cc(i1) * hsave + ss(i1) * h(i,j)
+                            h(i ,j) = - ss(i1) * hsave + cc(i1) * h(i,j)
                         enddo
 
 c                       new rotation on column j
@@ -240,15 +257,15 @@ C...COMPUTE GLOBAL ITERATE dg = dg + Z_m * y
 C...RECOVER RESIDUAL FOR RESTART
                 if (igmres.le.outer) then
                         do jj=1,j
-                                ii = j - jj + 2
-                                y(ii-1) = -ss(ii-1)*y(ii)
-                                y(ii) = cc(ii-1)*y(ii)
+                            ii = j - jj + 2
+                            y(ii-1) = -ss(ii-1)*y(ii)
+                            y(ii) = cc(ii-1)*y(ii)
                         end do
 
                         do jj=1,j+1
-                                tmpo = y(jj)
-                                if (jj.eq.1) tmpo = tmpo - 1.0
-                                call saxpy(nqc, tmpo, v1(1,jj), 1, v1, 1)
+                            tmpo = y(jj)
+                            if (jj.eq.1) tmpo = tmpo - 1.0
+                            call saxpy(nqc, tmpo, v1(1,jj), 1, v1, 1)
                         enddo
                 endif
 
@@ -264,7 +281,8 @@ C...GO BACK TO UNSCALED SYSTEM
 !                bg1(iqc) =bg1(iqc)*wg1(iqc)
 !        enddo
 
- 1000   format("fgmres:its ",i4,":iit ",i4,":iouter ",i4,": |r|/|ro| = ",e12.6)
+ 1000   format("fgmres:its ",i4,":iit ",
+     $         i4,":iouter ",i4,": |r|/|ro| = ",e12.6)
 
         call free(vloc1ptr)
         call free(v1ptr)  

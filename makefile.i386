@@ -1,0 +1,46 @@
+#UNI=yes
+
+KEYWORD=-DIEEE -DI386
+#UNI
+#	INCLUDE=
+#	FCU = ifc
+#	CCU = gcc
+#	FFLAGSU=-O2 $(KEYWORD) -DUNI
+#	CFLAGSU=-w -O2 $(KEYWORD) -DUNI
+#	COMMONLIBU=-lblas
+#	COMMONLIBU=
+
+#	FCU = ifc
+#	CCU = icc
+	FCU = ifort
+#	FCU =pgf90 
+	CCU = icc
+	FFLAGSU=-132 -w -autodouble -O2 -tpp7 -xHost $(KEYWORD) -DUNI -fpp
+	CFLAGSU=-w -O2 -tpp7 -xHost  $(KEYWORD) -DUNI
+        GFCU=gfortran
+        GCCU=gcc
+        GFFLAGSU=-march=core-avx-i -mcmodel=large -w -O2 -fcray-pointer -flto -funroll-all-loops -fprefetch-loop-arrays --param prefetch-latency=300 $(KEYWORD) -DUNI -cpp
+        GCFLAGSU=-march=core-avx-i -w -O2 -fcray-pointer -flto -funroll-all-loops $(KEYWORD) -DUNI
+        
+        
+        
+	#FFLAGSU=-Mextend -w    $(KEYWORD) -DUNI
+	#CFLAGSU=            $(KEYWORD) -DUNI
+#	COMMONLIBU=-lblas -Vaxlib
+#	COMMONLIBU=-Vaxlib
+
+#Parallel..............
+	#MPIHOME=/usr/local/src/mpich-1.2.1..7
+	#MPIHOME=/home/behr/src/mpich-1.2.1..7b
+	#MPIHOME=/usr/local/mpich-1.2.1..7b-gnu
+	#MPIHOME=/usr/local/mpich-1.2.1..7b-pgi
+	#MPIHOME=/usr/local/mpich-1.2.1..7b-intel
+ 
+	INCLUDE=-I /opt/software/intel_2019.u0/impi/2019.0.117/intel64/include
+	MPILIB=-L /opt/software/intel_2019.u0/impi/2019.0.117/intel64/lib -lmpich
+	FC=/opt/software/intel_2019.u0/impi/2019.0.117/intel64/bin/mpiifort
+	CC=/opt/software/intel_2019.u0/impi/2019.0.117/intel64/bin/mpiicc
+	FFLAGS=-132 -traceback -mcmodel=large -autodouble -w -O2 -tpp7 -xHost -fpp $(KEYWORD) $(INCLUDE) 
+	CFLAGS=-w -O2 -tpp7 -xHost $(KEYWORD) $(INCLUDE)
+	#COMMONLIB=-lblas -Vaxlib $(MPILIB)
+#	COMMONLIB=-Vaxlib $(MPILIB)

@@ -1,17 +1,20 @@
         subroutine filter(bg,id,ndf,nn)
+        USE OMP_LIB
         implicit none
         integer inl,idf,ndf,nn
         real*8 bg(ndf,nn),id(ndf,nn)
-        
+!$OMP PARALLEL DO PRIVATE(idf)
         do inl = 1,nn
                 do idf = 1,ndf
                          bg(idf,inl) = id(idf,inl)*bg(idf,inl)
                 enddo
         enddo
+!$OMP END PARALLEL DO
 
         endsubroutine
 !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         subroutine limiter(dn)
+        USE OMP_LIB
         implicit none
         include "global.h"
         real*8 dn(ndf,nnc)
@@ -22,6 +25,7 @@
 
         mnnc = (nn - 1) / nc + 1
 
+!$OMP PARALLEL DO PRIVATE(gnode, ro, uvel, vvel, wvel, e, temp)
         do i=1,nnc
             gnode = my_pe*mnnc + i
             ro    = dn(1,i)
@@ -33,7 +37,9 @@
      $            / fac
 
             if(ro.lt.0.1d0) then
+!$OMP CRITICAL
                 write(6,*) 'ro at global node ',gnode,' is ',dn(1,i)
+!$OMP END CRITICAL
                 dn(1,i) = 0.1d0
                 dn(2,i) = dn(1,i) * uvel
                 dn(3,i) = dn(1,i) * vvel
@@ -42,7 +48,9 @@
             endif
 
             if(temp.lt.0.1d0) then
+!$OMP CRITICAL
                 write(6,*) 'temp at global node ',gnode,' is ',temp
+!$OMP END CRITICAL
                 temp = 0.1d0
                 e = fac * temp + 0.5 *
      $              (dn(2,i)*dn(2,i)+dn(3,i)*dn(3,i)+dn(4,i)*dn(4,i))
@@ -50,10 +58,11 @@
                 dn(5,i) = dn(1,i) * e
             endif
         enddo
+!$OMP END PARALLEL DO
 
         endsubroutine
 !******************************************************************************
- 	subroutine limiter_turb(dn1)
+        subroutine limiter_turb(dn1)
         implicit none
         include "global.h"
         real*8 dn1(ndf_t,nnc)
