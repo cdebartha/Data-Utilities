@@ -1,7 +1,7 @@
 import ctypes
 import sys
 
-tecio = ctypes.cdll.LoadLibrary(r"C:\Program Files\Tecplot\Tecplot 360 EX 2018 R1\bin\tecio.dll")
+tecio = ctypes.cdll.LoadLibrary(r"/usr/local/tecplot/360ex_2018r2/bin/libtecio.so")
 
 # Only SZL files are supported.  Use the ".szplt" extension
 def open_file(file_name, dataset_title, var_names):

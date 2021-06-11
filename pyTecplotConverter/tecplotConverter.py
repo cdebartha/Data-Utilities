@@ -20,8 +20,8 @@ print('Setting up environment for datafile conversion: ')
 progress = 0
 bar = 100
 progressbar(progress, barLength=bar)
-nn = 1601441
-ne = 4659888
+nn = 2965732
+ne = 9732564
 curr = 0
 tot = nn + ne
 target = tot / bar 
@@ -37,14 +37,14 @@ d = np.empty((nn,ndof), dtype='float64')
 d_trans = np.empty((nn,nvar), dtype='float64')
 
 #%% Filenames
-start = 1
-end = 15
+start = 17
+end = 20
 dataFile = ['data.'+ str(i).zfill(2) for i in range(start,end+1)]
-outFile = ['ssa4_bp1p6_' + str(i).zfill(2) + '.szplt' for i in range(start,end+1)]
+outFile = ['Re10k_' + str(i).zfill(2) + '.szplt' for i in range(start,end+1)]
 #dataFile = ['data.28']
 #outFile = ['Re10k_bp1p4_28000.szplt']          
-xyzFile = 'mxyz'
-ienFile = 'mien'
+xyzFile = '../mesh_info/mxyz'
+ienFile = '../mesh_info/mien'
 
 #%% Read xyz and ien data
 xyzfile = open(xyzFile,'rb')
