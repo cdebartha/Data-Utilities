@@ -1,6 +1,0 @@
-#!/bin/bash
-rm AI_6bld-5_3
-make
-rm ../run/AI_6bld-5_3
-cp AI_6bld-5_3 ../run/
-#scpmurali
